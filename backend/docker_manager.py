@@ -1,4 +1,9 @@
-"""Docker container lifecycle management for agent leases."""
+"""Docker container lifecycle management for agent leases.
+
+v2：部署时注入随机访问密码（ACCESS_CODE / AUTH_PASSWORD），作为第二道认证防线。
+"""
+
+import secrets
 
 import docker
 from docker.errors import NotFound
@@ -15,10 +20,16 @@ AGENT_CONTAINER_PORT = {
 }
 
 
+def generate_access_password(length=12) -> str:
+    """生成随机访问密码（字母+数字，无易混淆字符）"""
+    alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=2048, cpu_quota=200000):
     """Run a container for the given agent lease.
 
-    Returns the started container object.
+    Returns (container, access_password).
     """
     image = f"myagentlab/{agent_id}:latest"
     container_name = f"agent-{agent_id}-{lease_id[:8]}"
@@ -28,11 +39,17 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         "user_id": user_id,
     }
     cport = AGENT_CONTAINER_PORT.get(agent_id, "8080")
+    access_password = generate_access_password()
+
     environment = {
         "OPENAI_API_KEY": api_key,
         "OPENAI_BASE_URL": OPENAI_BASE_URL,
         "OPENAI_PROXY_URL": OPENAI_BASE_URL,
         "AGENT_PORT": cport,
+        # 第二道认证：实例自带访问密码
+        "ACCESS_CODE": access_password,          # LobeChat: 聊天访问码
+        "AUTH_PASSWORD": access_password,        # Hermes Studio: 登录密码
+        "AUTH_USERNAME": "admin",
     }
 
     container = client.containers.run(
@@ -46,7 +63,7 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         detach=True,
         restart_policy={"Name": "unless-stopped"},
     )
-    return container
+    return container, access_password
 
 
 def stop_container(lease_id):

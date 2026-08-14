@@ -1,18 +1,47 @@
-"""Agent 实例动态反向代理：Host 子域名 -> 查库拿端口 -> 转发到本地容器端口
+"""Agent 实例动态反向代理：Host 子域名 -> 查库拿端口 -> JWT 校验 -> 转发到本地容器端口
 支持两种域名格式：
   {lease_prefix}.myagentlab.homes        (一级子域，证书免费覆盖)
   {lease_prefix}.agent.myagentlab.homes  (兼容旧格式)
+
+v3 安全：JWT 认证 + 归属校验
+  - 请求必须带平台登录 token（Cookie myagentlab_token 或 Authorization Bearer）
+  - token 无效/过期 -> 302 重定向到平台登录页（带 redirect 回跳）
+  - token 有效但子域名不属于当前用户 -> 403
+  - 管理员 token 可访问任意子域名（调试/运维）
 
 v2 修复：httpx 转发时自动解压了响应 body，但保留的 content-encoding 头
 会让浏览器按原编码解码失败（ERR_CONTENT_DECODING_FAILED）。
 转发时移除 content-encoding / content-length 头，让下游（CF/浏览器）重新压缩。
 """
+import os
 import sqlite3
+import time
+from urllib.parse import quote
+
 import httpx
+import jwt
 from fastapi import FastAPI, Request
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response, JSONResponse, RedirectResponse
 
 DB_PATH = ".AGENT_PLATFORM_ROOT/backend/data.db"
+ENV_FILE = ".AGENT_PLATFORM_ROOT/backend/.env"
+LOGIN_URL = "https://agent.myagentlab.homes/login"
+COOKIE_NAME = "myagentlab_token"
+JWT_ALGO = "HS256"
+
+
+def _load_jwt_secret():
+    """从 backend/.env 读 JWT_SECRET（与 app_secrets 同款逻辑，proxy 独立进程）"""
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("JWT_SECRET="):
+                    return line.split("=", 1)[1].strip()
+    return None
+
+
+JWT_SECRET = _load_jwt_secret()
 
 app = FastAPI(title="agent-proxy")
 client = httpx.AsyncClient(timeout=120.0)
@@ -32,20 +61,20 @@ DROP_RESPONSE_HEADERS = {
 }
 
 
-def find_port(prefix: str):
-    """按 lease_id 前缀查 running lease 的端口"""
+def find_lease(prefix: str):
+    """按 lease_id 前缀查 lease，返回 {id, port, user_id, status}"""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT id, port, status FROM leases WHERE id LIKE ?",
+            "SELECT id, port, status, user_id FROM leases WHERE id LIKE ?",
             (prefix + "%",)
         ).fetchall()
         conn.close()
         for r in rows:
             if r["status"] == "running":
-                return r["port"]
-        return rows[0]["port"] if rows else None
+                return dict(r)
+        return dict(rows[0]) if rows else None
     except Exception:
         return None
 
@@ -53,16 +82,47 @@ def find_port(prefix: str):
 def extract_prefix(host: str) -> str | None:
     """从 Host 头提取 lease 前缀"""
     host = host.split(":")[0]
-    # {prefix}.myagentlab.homes
     if host.endswith(".myagentlab.homes"):
         sub = host[: -len(".myagentlab.homes")]
         if sub and "." not in sub:
             return sub
-    # {prefix}.agent.myagentlab.homes（旧格式）
     if host.endswith(".agent.myagentlab.homes"):
         sub = host[: -len(".agent.myagentlab.homes")]
         if sub and "." not in sub:
             return sub
+    return None
+
+
+def get_token(request: Request) -> str | None:
+    """从 Cookie 或 Authorization 头取 token"""
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return request.cookies.get(COOKIE_NAME)
+
+
+def decode_token(token: str):
+    """校验 JWT，返回 payload 或 None"""
+    if not JWT_SECRET:
+        return None
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+    except Exception:
+        return None
+
+
+def check_auth(request: Request, lease: dict) -> str | None:
+    """认证 + 归属校验。返回 None=通过，否则返回错误描述。"""
+    token = get_token(request)
+    if not token:
+        return "未登录"
+    payload = decode_token(token)
+    if not payload:
+        return "登录无效或已过期"
+    if payload.get("admin"):
+        return None  # 管理员可访问任意实例
+    if lease and payload.get("sub") != lease.get("user_id"):
+        return "无权访问该实例"
     return None
 
 
@@ -73,40 +133,55 @@ async def proxy(path: str, request: Request):
     if prefix is None:
         return JSONResponse({"detail": "unknown host: " + host}, status_code=404)
 
-    port = find_port(prefix)
-    if port is None:
+    lease = find_lease(prefix)
+    if lease is None:
         return JSONResponse({"detail": f"lease '{prefix}' not found or not running"}, status_code=404)
 
+    # ---- v3 安全：认证 + 归属 ----
+    auth_err = check_auth(request, lease)
+    if auth_err == "未登录":
+        # 浏览器请求 -> 302 跳登录页；API 请求 -> 401 JSON
+        target = f"https://{host}/" + path
+        if request.url.query:
+            target += "?" + request.url.query
+        if request.headers.get("accept", "").find("text/html") >= 0:
+            return RedirectResponse(
+                f"{LOGIN_URL}?redirect={quote(target, safe='')}",
+                status_code=302,
+            )
+        return JSONResponse({"detail": "未登录"}, status_code=401)
+    if auth_err:
+        return JSONResponse({"detail": auth_err}, status_code=403)
+
+    port = lease["port"]
     url = f"http://127.0.0.1:{port}/" + path
     if request.url.query:
         url += "?" + request.url.query
 
-    # 请求头：剔除 hop-by-hop 和 content-length（httpx 重新计算）
     headers = {
         k: v for k, v in request.headers.items()
-        if k.lower() not in ("host", "content-length", "connection", "transfer-encoding", "accept-encoding")
+        if k.lower() not in ("host", "content-length", "connection", "transfer-encoding", "accept-encoding", "cookie")
     }
     body = await request.body()
     try:
         resp = await client.request(
             request.method, url, headers=headers, content=body or None,
         )
-        # 响应头：剔除压缩/长度相关头（body 已被 httpx 解码为明文，重新让下游协商）
         out_headers = {
             k: v for k, v in resp.headers.items()
             if k.lower() not in DROP_RESPONSE_HEADERS
         }
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            headers=out_headers,
-        )
-    except httpx.ConnectError:
-        return JSONResponse({"detail": f"agent container on port {port} unreachable"}, status_code=502)
-    except Exception as e:
-        return JSONResponse({"detail": f"proxy error: {e}"}, status_code=502)
+        return Response(content=resp.content, status_code=resp.status_code, headers=out_headers)
+    except httpx.HTTPError:
+        return JSONResponse({"detail": "upstream error"}, status_code=502)
+
+
+@app.get("/__proxy_health")
+async def health():
+    return {"status": "ok", "jwt_secret_loaded": bool(JWT_SECRET)}
 
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=80)

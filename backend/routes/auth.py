@@ -1,4 +1,4 @@
-"""Auth routes: 注册/登录/me + JWT 工具"""
+"""Auth routes: 注册/登录/me + JWT 工具（v2：登录/注册响应 Set-Cookie，租户子域名共享登录态）"""
 
 import hashlib
 import hmac
@@ -9,6 +9,7 @@ from datetime import datetime
 
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,10 @@ from app_secrets import JWT_SECRET
 
 SECRET = JWT_SECRET
 ALGO = "HS256"
+
+# 平台登录 cookie：Domain=.myagentlab.homes 使所有租户子域名共享
+COOKIE_NAME = "myagentlab_token"
+COOKIE_DOMAIN = ".myagentlab.homes"
 
 
 class RegisterRequest(BaseModel):
@@ -81,6 +86,27 @@ def get_admin_user(user: User = Depends(get_current_user)):
     return user
 
 
+def _auth_response(user: User):
+    """登录/注册成功响应：JSON + Set-Cookie（HttpOnly，租户子域名共享）"""
+    token = create_token(user)
+    resp = JSONResponse({
+        "token": token,
+        "username": user.username,
+        "is_admin": bool(user.is_admin),
+    })
+    resp.set_cookie(
+        COOKIE_NAME,
+        token,
+        max_age=7 * 24 * 3600,
+        httponly=True,
+        domain=COOKIE_DOMAIN,
+        path="/",
+        samesite="lax",
+        secure=True,
+    )
+    return resp
+
+
 @router.post("/register")
 def register(req: RegisterRequest, db: Session = Depends(get_db)):
     from settings_store import get_setting
@@ -99,7 +125,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     )
     db.add(user)
     db.commit()
-    return {"token": create_token(user), "username": user.username, "is_admin": False}
+    return _auth_response(user)
 
 
 @router.post("/login")
@@ -107,13 +133,18 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == req.username).first()
     if not user or not verify_password(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return {
-        "token": create_token(user),
-        "username": user.username,
-        "is_admin": bool(user.is_admin),
-    }
+    if not getattr(user, "enabled", 1):
+        raise HTTPException(status_code=403, detail="账号已禁用")
+    return _auth_response(user)
 
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
-    return {"username": user.username, "is_admin": bool(user.is_admin), "created_at": user.created_at.isoformat()}
+    return {"id": user.id, "username": user.username, "is_admin": bool(user.is_admin)}
+
+
+@router.post("/logout")
+def logout():
+    resp = JSONResponse({"success": True})
+    resp.delete_cookie(COOKIE_NAME, domain=COOKIE_DOMAIN, path="/")
+    return resp

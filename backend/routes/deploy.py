@@ -61,7 +61,7 @@ def deploy(req: DeployRequest, db: Session = Depends(get_db), user: User = Depen
         raise HTTPException(status_code=503, detail=str(exc))
 
     try:
-        container = deploy_container(
+        container, access_password = deploy_container(
             agent_id=req.agent_id,
             user_id=user_id,
             api_key=req.api_key,
@@ -86,6 +86,7 @@ def deploy(req: DeployRequest, db: Session = Depends(get_db), user: User = Depen
         status="running",
         started_at=now,
         expires_at=now + timedelta(days=req.duration_days),
+        access_password=access_password,
     )
     db.add(lease)
     db.commit()
@@ -98,6 +99,7 @@ def deploy(req: DeployRequest, db: Session = Depends(get_db), user: User = Depen
     log_action(db, user_id, "deploy", req.agent_id, "success")
     return {
         "lease_id": lease_id,
+        "access_password": access_password,
         "port": port,
         "url": public_url,
         "subdomain": subdomain(lease_id),

@@ -22,6 +22,7 @@ def _lease_to_dict(lease: Lease, agent: Agent = None):
         "container_id": lease.container_id,
         "status": lease.status,
         "url": url,
+        "access_password": getattr(lease, "access_password", ""),
         "started_at": lease.started_at.isoformat() if lease.started_at else None,
         "expires_at": lease.expires_at.isoformat() if lease.expires_at else None,
     }

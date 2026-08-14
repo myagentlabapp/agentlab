@@ -33,6 +33,7 @@ class Lease(Base):
     status = Column(String, nullable=False, default="running")
     started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    access_password = Column(String, nullable=False, default="")
 
 
 class User(Base):

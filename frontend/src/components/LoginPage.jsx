@@ -12,6 +12,18 @@ export default function LoginPage({ onLoggedIn }) {
   const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '智体工坊', brand_tagline: 'Agent 租赁平台' });
   const [regOpen, setRegOpen] = useState(true);
 
+  // 登录成功后回跳目标（来自租户子域名的 302 跳转 ?redirect=...）
+  const getRedirect = () => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const r = p.get('redirect');
+      if (r && r.startsWith('https://') && r.includes('.myagentlab.homes')) {
+        return r;
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  };
+
   useEffect(() => {
     getPublicSettings().then((s) => {
       setBrand(s);
@@ -33,6 +45,12 @@ export default function LoginPage({ onLoggedIn }) {
         : await register(username, password);
       setToken(res.token);
       onLoggedIn(res);
+      // 有 redirect 目标（租户子域名）→ 跳回去（cookie 已种在 .myagentlab.homes，浏览器自动带上）
+      const target = getRedirect();
+      if (target) {
+        window.location.href = target;
+        return;
+      }
     } catch (err) {
       setError(err.message);
     }

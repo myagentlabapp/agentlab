@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 密钥（绝不提交）
+backend/.env
+backend/app_secrets.py
+
+# 数据
+backend/data.db
+backend/uploads/
+
+# 日志与开发产物
+*.log
+m1_prompt.txt
+m2_prompt.txt
+m3_prompt.txt
+*.prompt.txt
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS
+.DS_Store

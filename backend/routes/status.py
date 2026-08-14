@@ -1,0 +1,53 @@
+"""Lease status and listing routes."""
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import Lease, Agent, User
+from routes.auth import get_current_user
+
+router = APIRouter(prefix="/api", tags=["status"])
+
+
+def _lease_to_dict(lease: Lease, agent: Agent = None):
+    agent_name = agent.name if agent else lease.agent_id
+    url = f"https://{lease.id[:8]}.myagentlab.homes" if lease.status == "running" else None
+    return {
+        "id": lease.id,
+        "agent_id": lease.agent_id,
+        "agent_name": agent_name,
+        "user_id": lease.user_id,
+        "port": lease.port,
+        "container_id": lease.container_id,
+        "status": lease.status,
+        "url": url,
+        "started_at": lease.started_at.isoformat() if lease.started_at else None,
+        "expires_at": lease.expires_at.isoformat() if lease.expires_at else None,
+    }
+
+
+@router.get("/status/{lease_id}")
+def lease_status(lease_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return details for a single lease (owner only)."""
+    lease = db.query(Lease).filter(Lease.id == lease_id).first()
+    if not lease:
+        raise HTTPException(status_code=404, detail="Lease not found")
+    if lease.user_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="无权查看该实例")
+    agent = db.query(Agent).filter(Agent.id == lease.agent_id).first()
+    return _lease_to_dict(lease, agent)
+
+
+@router.get("/leases")
+def list_leases(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Return current user's leases (admin sees all)."""
+    query = db.query(Lease)
+    if not user.is_admin:
+        query = query.filter(Lease.user_id == user.id)
+    leases = query.all()
+    result = []
+    for lease in leases:
+        agent = db.query(Agent).filter(Agent.id == lease.agent_id).first()
+        result.append(_lease_to_dict(lease, agent))
+    return result

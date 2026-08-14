@@ -1,7 +1,9 @@
 """Configuration for the Agent Tenant Platform."""
 
-MACHINE_IP = "127.0.0.1"
-OPENAI_BASE_URL = "https://api.example.com/v1"
+from app_secrets import get_env
+
+MACHINE_IP = get_env("MACHINE_IP", "127.0.0.1")
+OPENAI_BASE_URL = get_env("OPENAI_BASE_URL", "https://api.example.com/v1")
 API_BASE_URL = OPENAI_BASE_URL
 
 DB_PATH = "data.db"
@@ -30,9 +32,15 @@ AGENTS = {
     "lobechat": {
         "id": "lobechat",
         "name": "LobeChat",
-        "description": "开源 AI 聊天前端，支持多模型切换和插件扩展",
+        "description": "开源 AI 聊天界面，支持多模型切换、多会话管理",
         "icon": "chat",
         "image": "myagentlab/lobechat:latest",
         "price_monthly": 0,
     },
+}
+
+SETTINGS = {
+    "default_duration_days": 7,
+    "max_duration_days": 30,
+    "max_instances_per_user": 3,
 }

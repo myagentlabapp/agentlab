@@ -8,12 +8,12 @@ import ssl
 import urllib.request
 import urllib.error
 
-from app_secrets import CF_TOKEN
-CF_ACCOUNT = "bf7b8e67616e9252b8f90dcbc609f1fb"
-CF_TUNNEL = "c1b5b61f-dd7d-4ea0-be2d-da986258d476"
-CF_ZONE = "4eda61b781906c32a11e6c4bd6b3e5ce"
-TUNNEL_CNAME = "c1b5b61f-dd7d-4ea0-be2d-da986258d476.cfargotunnel.com"
-PROXY_TARGET = "http://127.0.0.1:80"
+from app_secrets import CF_TOKEN, get_env
+CF_ACCOUNT = get_env("CF_ACCOUNT", "")
+CF_TUNNEL = get_env("CF_TUNNEL", "")
+CF_ZONE = get_env("CF_ZONE", "")
+TUNNEL_CNAME = get_env("TUNNEL_CNAME", "")
+PROXY_TARGET = get_env("PROXY_TARGET", "http://127.0.0.1:80")
 
 _ctx = ssl.create_default_context()
 _ctx.check_hostname = False

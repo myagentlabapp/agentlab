@@ -43,8 +43,8 @@
 # 后端（setsid 防终端关闭）
 cd backend && setsid nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8080 > /tmp/backend.log 2>&1 &
 
-# 动态反代（80 端口需 root + httpx PYTHONPATH）
-cd .AGENT_PLATFORM_ROOT && echo 'REDACTED' | sudo -S env PYTHONPATH=/home/yy/.local/lib/python3.10/site-packages setsid nohup python3 proxy.py > /tmp/proxy.log 2>&1 &
+# 动态反代（80 端口需 root；httpx 装在用户目录时需 PYTHONPATH）
+cd <项目目录> && sudo env PYTHONPATH=<python site-packages 路径> setsid nohup python3 proxy.py > /tmp/proxy.log 2>&1 &
 
 # 过期回收
 cd backend && setsid nohup python3 reaper.py > /tmp/reaper.log 2>&1 &
@@ -55,7 +55,7 @@ cd frontend && tmux new -d -s frontend 'npx vite --host 0.0.0.0 --port 3000'
 
 ## 管理员
 
-- 账号：admin（初始密码 REDACTED，可在平台设置→安全与备份修改）
+- 账号：admin（初始密码在部署时设置，登录后可在 平台设置→安全与备份 修改）
 - 入口：登录后导航「⚙️ 管理后台」
 
 ## 注意

@@ -92,7 +92,8 @@ def deploy(req: DeployRequest, db: Session = Depends(get_db), user: User = Depen
 
     public_url = register_subdomain(lease_id)
     if public_url is None:
-        public_url = f"http://127.0.0.1:{port}"
+        from config import MACHINE_IP
+        public_url = f"http://{MACHINE_IP}:{port}"
 
     log_action(db, user_id, "deploy", req.agent_id, "success")
     return {

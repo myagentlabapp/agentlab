@@ -47,7 +47,7 @@ function AdminPanel({ onBrandSaved }) {
   return (
     <div className="admin-panel">
       <div className="admin-nav">
-        <h2>🧪 智体工坊 · 管理后台</h2>
+        <h2>🧪 管理后台</h2>
         <div className="admin-tabs">
           {tabs.map(([ep, label]) => (
             <button key={ep} className={tab === ep ? 'active' : ''} onClick={() => switchTab(ep)}>{label}</button>

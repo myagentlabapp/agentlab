@@ -12,7 +12,7 @@ export default function App() {
   const [leases, setLeases] = useState([])
   const [user, setUser] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
-  const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '智体工坊' })
+  const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '' })
 
   useEffect(() => {
     getPublicSettings().then(setBrand).catch(() => {})

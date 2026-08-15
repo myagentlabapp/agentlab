@@ -1,11 +1,12 @@
 """Lease reaper: 定时扫描过期租约，停容器释放资源
 运行：nohup python3 reaper.py &   （每分钟检查一次）
 """
+import os
 import sys
 import time
 from datetime import datetime
 
-sys.path.insert(0, ".AGENT_PLATFORM_ROOT/backend")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from database import get_db
 from models import Lease

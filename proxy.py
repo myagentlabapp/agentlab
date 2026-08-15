@@ -25,8 +25,9 @@ import jwt
 from fastapi import FastAPI, Request
 from fastapi.responses import Response, JSONResponse, RedirectResponse
 
-DB_PATH = ".AGENT_PLATFORM_ROOT/backend/data.db"
-ENV_FILE = ".AGENT_PLATFORM_ROOT/backend/.env"
+_ROOT = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(_ROOT, "backend", "data.db")
+ENV_FILE = os.path.join(_ROOT, "backend", ".env")
 COOKIE_NAME = "myagentlab_token"
 JWT_ALGO = "HS256"
 

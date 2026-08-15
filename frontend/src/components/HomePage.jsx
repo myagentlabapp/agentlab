@@ -4,7 +4,7 @@ import BrandLogo from './BrandLogo.jsx';
 
 export default function HomePage({ onNavigate }) {
   const [brand, setBrand] = useState({
-    brand_logo: '🧪', brand_name: '智体工坊', brand_tagline: 'Agent 租赁平台',
+    brand_logo: '🧪', brand_name: '', brand_tagline: 'Agent 租赁平台',
     brand_slogan_1: '租一个 AI Agent', brand_slogan_2: '打开就能用',
     brand_promo: '', brand_free_text: '限时免费', brand_free_sub: '限时免费，部署即用。',
     brand_footer: '', brand_announcement: '', brand_primary_color: '#4f46e5',

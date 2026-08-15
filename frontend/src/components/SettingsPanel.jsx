@@ -328,7 +328,7 @@ function SettingsPanel({ onSaved }) {
             </div>
             <div className="form-item">
               <label>发件人名称</label>
-              <input value={settings.smtp_from_name || ''} placeholder="智体工坊" onChange={set('smtp_from_name')} />
+              <input value={settings.smtp_from_name || ''} placeholder="你的品牌名" onChange={set('smtp_from_name')} />
             </div>
             <div className="form-item">
               <label>加密方式</label>

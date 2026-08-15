@@ -24,7 +24,7 @@ export default function LoginPage({ onLoggedIn }) {
   const [password2, setPassword2] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '智体工坊', brand_tagline: 'Agent 租赁平台' });
+  const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '', brand_tagline: 'Agent 租赁平台' });
   const [regOpen, setRegOpen] = useState(true);
   const [tsEnabled, setTsEnabled] = useState(false);
   const [tsSiteKey, setTsSiteKey] = useState('');

@@ -1,0 +1,30 @@
+# AgentLab 后端镜像
+# 用法: docker compose -f docker/docker-compose.yml build backend
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# 依赖清单:
+#   fastapi/uvicorn/sqlalchemy/pydantic/docker —— requirements.txt 基础
+#   python-multipart —— 支付回调 form 解析必需(缺了 notify 500,生产踩过的坑)
+#   httpx/PyJWT —— proxy.py 动态反代必需(转发 + JWT 校验)
+# 国内源加速
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    fastapi \
+    'uvicorn[standard]' \
+    docker \
+    sqlalchemy \
+    pydantic \
+    python-multipart \
+    httpx \
+    PyJWT
+
+COPY backend/ .
+
+# main.py 挂载了 /uploads 静态目录,必须存在
+RUN mkdir -p uploads
+
+EXPOSE 8080
+
+# backend 服务默认命令;reaper/proxy 通过 compose command 覆盖
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

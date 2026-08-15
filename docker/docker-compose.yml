@@ -1,0 +1,65 @@
+# AgentLab（智体工坊）Docker 部署
+# 使用: docker compose -f docker/docker-compose.yml up -d
+#
+# 组件:
+#   backend  — FastAPI 后端 :8080,挂载 docker.sock 创建租户容器(DooD 模式)
+#   reaper   — 租约回收器,共享 data.db + docker.sock
+#   frontend — nginx 服务前端静态文件 + /api 反代
+#   proxy    — :80 动态反代(按子域名路由租户容器),host 网络
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    image: myagentlab/agentlab-backend:latest
+    container_name: agentlab-backend
+    restart: unless-stopped
+    ports:
+      - "${AGENTLAB_BACKEND_PORT:-8080}:8080"
+    volumes:
+      # 遥控宿主 Docker 创建租户容器(关键挂载)
+      - /var/run/docker.sock:/var/run/docker.sock
+      # 数据与配置持久化
+      - ../backend/data.db:/app/data.db
+      - ../backend/.env:/app/.env:ro
+      - ../backend/uploads:/app/uploads
+    environment:
+      - TZ=Asia/Shanghai
+
+  reaper:
+    image: myagentlab/agentlab-backend:latest
+    container_name: agentlab-reaper
+    restart: unless-stopped
+    command: ["python3", "reaper.py"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ../backend/data.db:/app/data.db
+      - ../backend/.env:/app/.env:ro
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    image: myagentlab/agentlab-frontend:latest
+    container_name: agentlab-frontend
+    restart: unless-stopped
+    ports:
+      - "${AGENTLAB_FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+
+  proxy:
+    image: myagentlab/agentlab-backend:latest
+    container_name: agentlab-proxy
+    restart: unless-stopped
+    network_mode: host
+    command: ["uvicorn", "proxy:app", "--host", "0.0.0.0", "--port", "80"]
+    volumes:
+      # proxy.py 在项目根,期望 /app/backend/data.db 与 /app/backend/.env
+      - ../backend/data.db:/app/backend/data.db
+      - ../backend/.env:/app/backend/.env:ro
+      - ../proxy.py:/app/proxy.py:ro
+    depends_on:
+      - backend

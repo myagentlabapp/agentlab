@@ -1,0 +1,20 @@
+# AgentLab 前端镜像: node 构建静态文件 → nginx 服务
+# 用法: docker compose -f docker/docker-compose.yml build frontend
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY frontend/package.json ./
+RUN npm config set registry https://registry.npmmirror.com && npm install
+
+COPY frontend/ .
+RUN npm run build
+
+# 生产: nginx 服务静态文件
+FROM nginx:alpine
+
+COPY --from=build /app/dist /usr/share/nginx/html
+# /api 反代到 compose 网络内的 backend 容器
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

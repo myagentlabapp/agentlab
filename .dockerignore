@@ -1,0 +1,10 @@
+# AgentLab Docker 构建忽略(放项目根,docker compose build context 使用)
+.git
+frontend/node_modules
+backend/__pycache__
+backend/*.log
+*.log
+m1-*.log
+m2-*.log
+m3-*.log
+nginx

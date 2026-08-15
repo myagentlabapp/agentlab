@@ -1,0 +1,7 @@
+services:
+  backend:
+    container_name: agentlab-backend-test
+  reaper:
+    container_name: agentlab-reaper-test
+  frontend:
+    container_name: agentlab-frontend-test

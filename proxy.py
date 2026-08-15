@@ -1,5 +1,14 @@
 """proxy.py v5: 平台认证只认 cookie(Authorization 透传给租户容器)
 
+v6 变更(2026-08-15, F1b):
+- WS 转发: 上游 Host 头改为租户原始 Host(浏览器 Host), 不再用默认的 127.0.0.1:port。
+  原因: hermes 容器 socket.io 的 allowRequest 用 Jv(Origin, req.headers.host, corsOrigins)
+  做同源校验 —— 当 CORS_ORIGINS 未配置(默认 "")时, 退化为"Origin 的 host 必须等于
+  请求 Host 头的 host"。proxy 转发到 ws://127.0.0.1:port 时 websockets 库默认发
+  Host: 127.0.0.1:port, 而浏览器 Origin=https://<租户>.myagentlab.homes, host 不等
+  -> 上游 socket.io 返回 400 "origin not allowed", WS 握手失败, 前端 socket.io 一直
+  timeout。把上游 Host 改成租户域名后 Origin 与 Host 同源, 校验通过 -> 101 握手成功。
+
 v5 变更(2026-08-15):
 - check_auth_headers / _token_from: 平台 JWT 只从 cookie 读取。
   Authorization 头不再被平台校验拦截, 原样透传给租户容器 —
@@ -193,6 +202,15 @@ async def proxy_ws(websocket: WebSocket, path: str):
     if origin:
         upstream_headers["Origin"] = origin
 
+    # 上游 Host 头用租户原始 Host(浏览器看到的域名), 不能用 127.0.0.1:port。
+    # hermes socket.io 的 allowRequest(Jv) 在 CORS_ORIGINS 未配置时退化为同源校验:
+    # 要求 Origin 的 host === 请求 Host 头的 host。若用默认 Host=127.0.0.1:port,
+    # 浏览器 Origin=<租户域名> 与之不等 -> 上游 400 "origin not allowed", WS 握手失败。
+    # 用租户域名作 Host 后两者同源, 校验通过。(v6/F1b)
+    original_host = websocket.headers.get("host", "")
+    if original_host:
+        upstream_headers["Host"] = original_host
+
     try:
         upstream = await ws_lib.connect(upstream_url, open_timeout=15, additional_headers=upstream_headers)
     except Exception:
@@ -275,6 +293,11 @@ async def proxy(path: str, request: Request):
         k: v for k, v in request.headers.items()
         if k.lower() not in ("host", "content-length", "connection", "transfer-encoding", "accept-encoding", "cookie")
     }
+    # 上游 Host 用租户原始 Host, 与 WS 转发同理(v6/F1b): hermes socket.io 的同源校验
+    # (allowRequest / @koa/cors) 要求 Origin.host === 请求 Host.host。httpx 默认会按
+    # url(127.0.0.1:port) 设置 Host, 这里显式覆盖为租户域名, 使 Origin 与 Host 同源。
+    if host:
+        headers["host"] = host
     body = await request.body()
     try:
         resp = await client.request(

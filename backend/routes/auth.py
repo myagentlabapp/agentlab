@@ -210,6 +210,7 @@ def _auth_response(user: User):
         "token": token,
         "username": user.username,
         "is_admin": bool(user.is_admin),
+        "balance": round(getattr(user, "balance", 0) or 0, 2),
     })
     from settings_store import get_setting
     _pd = (get_setting("platform_domain", "") or "").strip()
@@ -406,7 +407,8 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user)):
-    return {"id": user.id, "username": user.username, "is_admin": bool(user.is_admin)}
+    return {
+        "balance": round(getattr(user, "balance", 0) or 0, 2),"id": user.id, "username": user.username, "is_admin": bool(user.is_admin)}
 
 
 @router.post("/forgot-password")

@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -17,6 +17,8 @@ class Agent(Base):
     icon = Column(String, nullable=False, default="")
     image = Column(String, nullable=False)
     price_monthly = Column(Integer, nullable=False, default=0)
+    price_hourly = Column(Float, nullable=False, default=0.0)
+    billing_modes = Column(String, nullable=False, default="monthly")
     enabled = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -34,6 +36,7 @@ class Lease(Base):
     started_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     access_password = Column(String, nullable=False, default="")
+    billing_mode = Column(String, nullable=False, default="monthly")
 
 
 class User(Base):
@@ -45,7 +48,25 @@ class User(Base):
     is_admin = Column(Integer, nullable=False, default=0)
     email = Column(String, nullable=True, default="")
     enabled = Column(Integer, nullable=False, default=1)
+    balance = Column(Float, nullable=False, default=0.0)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class Order(Base):
+    """支付订单（虎皮椒）"""
+    __tablename__ = "orders"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    agent_id = Column(String, nullable=False, default="")
+    title = Column(String, nullable=False, default="")
+    amount = Column(Float, nullable=False, default=0.0)
+    billing_mode = Column(String, nullable=False, default="monthly")
+    duration_days = Column(Integer, nullable=False, default=0)
+    duration_hours = Column(Integer, nullable=False, default=0)
+    status = Column(String, nullable=False, default="pending")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    paid_at = Column(DateTime, nullable=True)
 
 
 class Setting(Base):
@@ -61,7 +82,7 @@ class ApiLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(String, nullable=False, default="")
-    action = Column(String, nullable=False, default="")   # deploy/stop/list...
+    action = Column(String, nullable=False, default="")
     agent_id = Column(String, nullable=False, default="")
     status = Column(String, nullable=False, default="")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

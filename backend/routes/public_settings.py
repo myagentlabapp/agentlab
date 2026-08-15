@@ -36,4 +36,6 @@ def public_settings():
         "lldap_enabled": s.get("lldap_enabled", "false") == "true",
         "platform_domain": s.get("platform_domain", "").strip(),
         "platform_url": s.get("platform_url", "").strip(),
+        "payment_enabled": s.get("payment_enabled", "false") == "true",
+        "usage_daily_rate": float(s.get("usage_daily_rate", "1") or 1),
     }

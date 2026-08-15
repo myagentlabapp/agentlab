@@ -21,6 +21,8 @@ def list_agents(db: Session = Depends(get_db)):
             "icon": agent.icon,
             "image": agent.image,
             "price_monthly": agent.price_monthly,
+            "price_hourly": getattr(agent, "price_hourly", 0) or 0,
+            "billing_modes": (getattr(agent, "billing_modes", "monthly") or "monthly").split(","),
         }
         for agent in agents
     ]

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { adminOverview, adminUsers, adminLeases, adminContainers, adminResources } from '../api/client.js';
+import { adminOverview, adminUsers, adminLeases, adminContainers, adminResources, adminExtendLease, adminRecycleLease, adminLeaseLogs } from '../api/client.js';
 import SettingsPanel from './SettingsPanel.jsx';
 
 function AdminPanel({ onBrandSaved }) {
@@ -92,7 +92,7 @@ function AdminPanel({ onBrandSaved }) {
 
       {!loading && data && tab === 'leases' && (
         <table className="admin-table">
-          <thead><tr><th>Agent</th><th>用户</th><th>状态</th><th>访问地址</th><th>到期</th></tr></thead>
+          <thead><tr><th>Agent</th><th>用户</th><th>状态</th><th>访问地址</th><th>到期</th><th>操作</th></tr></thead>
           <tbody>
             {data.map(l => (
               <tr key={l.id}>
@@ -101,6 +101,15 @@ function AdminPanel({ onBrandSaved }) {
                 <td className={l.status === 'running' ? 'green' : ''}>{l.status}</td>
                 <td>{l.url ? <a href={l.url} target="_blank" rel="noreferrer">{l.url}</a> : '-'}</td>
                 <td>{l.expires_at ? l.expires_at.slice(0, 10) : '-'}</td>
+                <td>
+                  {l.status === 'running' && (
+                    <>
+                      <button className="toggle-btn" onClick={() => { const d = prompt('延长天数（从用户余额扣费）:'); if (d) adminExtendLease(l.id, parseInt(d)).then(() => fetchData('leases')).catch(e => alert(e.message)); }}>延长</button>{' '}
+                      <button className="toggle-btn" onClick={() => { if (confirm('强制回收该实例？（停止并删除容器）')) adminRecycleLease(l.id).then(() => fetchData('leases')).catch(e => alert(e.message)); }}>回收</button>{' '}
+                      <button className="toggle-btn" onClick={() => adminLeaseLogs(l.id, 200).then(r => alert(r.logs.slice(-1500))).catch(e => alert(e.message))}>日志</button>
+                    </>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

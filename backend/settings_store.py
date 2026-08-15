@@ -39,6 +39,13 @@ DEFAULTS = {
     "port_range_start": "9000",
     "port_range_end": "9100",
     # ---- 计费 ----
+    "payment_enabled": "false",
+    "xunhupay_appid": "",
+    "xunhupay_appsecret": "",
+    "xunhupay_gateway": "https://api.xunhupay.com/payment/do.html",
+    "reaper_interval": "60",
+    "usage_daily_rate": "1",
+
     "currency_symbol": "¥",             # 币种符号
     "billing_mode": "monthly",          # monthly|hourly|usage
     "discount_new_user": "100",         # 新用户折扣 %（100=无折扣）

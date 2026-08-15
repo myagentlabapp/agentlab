@@ -91,10 +91,10 @@ export function getAgents() {
   return request('/api/agents')
 }
 
-export function deployAgent(agent_id, api_key, duration_days) {
+export function deployAgent(agent_id, api_key, duration_days, billing_mode, months, hours) {
   return request('/api/deploy', {
     method: 'POST',
-    body: JSON.stringify({ agent_id, api_key, duration_days })
+    body: JSON.stringify({ agent_id, api_key, duration_days, billing_mode: billing_mode || 'free', months: months || 1, hours: hours || 1 })
   })
 }
 
@@ -180,4 +180,42 @@ export function uploadLogo(dataUrl) {
     method: 'POST',
     body: JSON.stringify({ data: dataUrl })
   })
+}
+
+
+// Payment & Balance
+export function createOrder(agent_id, billing_mode, months, hours) {
+  return request('/api/pay/create', {
+    method: 'POST',
+    body: JSON.stringify({ agent_id, billing_mode, months: months || 1, hours: hours || 1 })
+  })
+}
+export function recharge(amount) {
+  return request('/api/pay/recharge', {
+    method: 'POST',
+    body: JSON.stringify({ amount })
+  })
+}
+export function myOrders() {
+  return request('/api/pay/orders')
+}
+export function myBalance() {
+  return request('/api/pay/balance')
+}
+
+// Lease admin
+export function adminExtendLease(lease_id, extend_days) {
+  return request(`/api/admin/leases/${lease_id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ extend_days })
+  })
+}
+export function adminRecycleLease(lease_id) {
+  return request(`/api/admin/leases/${lease_id}`, {
+    method: 'PUT',
+    body: JSON.stringify({ action: 'recycle' })
+  })
+}
+export function adminLeaseLogs(lease_id, lines) {
+  return request(`/api/admin/leases/${lease_id}/logs?lines=${lines || 100}`)
 }

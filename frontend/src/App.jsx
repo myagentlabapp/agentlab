@@ -5,6 +5,7 @@ import AgentList from './components/AgentList.jsx'
 import LeaseList from './components/LeaseList.jsx'
 import AdminPanel from './components/AdminPanel.jsx'
 import BrandLogo from './components/BrandLogo.jsx'
+import RechargeDialog from './components/RechargeDialog.jsx'
 import { getMe, setToken, getPublicSettings } from './api/client.js'
 
 export default function App() {
@@ -13,6 +14,7 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authChecked, setAuthChecked] = useState(false)
   const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '' })
+  const [showRecharge, setShowRecharge] = useState(false)
 
   useEffect(() => {
     getPublicSettings().then(setBrand).catch(() => {})
@@ -40,7 +42,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage onLoggedIn={(res) => setUser({ username: res.username, is_admin: res.is_admin })} />
+    return <LoginPage onLoggedIn={(res) => setUser({ username: res.username, is_admin: res.is_admin, balance: res.balance || 0 })} />
   }
 
   return (
@@ -59,6 +61,8 @@ export default function App() {
             </>
           )}
           <span className="nav-user">
+            💰 ¥{user.balance ?? 0}
+            <button className="toggle-btn" onClick={() => setShowRecharge(true)}>充值</button>
             👤 {user.username}
             <button className="logout-btn" onClick={() => { setToken(null); setUser(null); }}>退出</button>
           </span>
@@ -67,10 +71,20 @@ export default function App() {
 
       <main>
         {currentPage === 'home' && <HomePage onNavigate={navigate} />}
-        {currentPage === 'market' && <AgentList onDeploy={() => {}} />}
+        {currentPage === 'market' && <AgentList onDeploy={() => {}} onGoRecharge={() => setShowRecharge(true)} />}
         {currentPage === 'leases' && <LeaseList leases={leases} setLeases={setLeases} />}
         {currentPage === 'admin' && user.is_admin && <AdminPanel onBrandSaved={() => getPublicSettings().then(setBrand)} />}
       </main>
+
+      {showRecharge && (
+        <RechargeDialog
+          onClose={() => setShowRecharge(false)}
+          onRecharged={(balance) => {
+            setUser((u) => ({ ...u, balance }))
+            setShowRecharge(false)
+          }}
+        />
+      )}
     </div>
   )
 }

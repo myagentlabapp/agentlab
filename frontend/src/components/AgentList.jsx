@@ -3,7 +3,7 @@ import AgentCard from './AgentCard.jsx'
 import DeployDialog from './DeployDialog.jsx'
 import { getAgents } from '../api/client.js'
 
-export default function AgentList({ onDeploy }) {
+export default function AgentList({ onDeploy, onGoRecharge }) {
   const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -49,6 +49,7 @@ export default function AgentList({ onDeploy }) {
       {deployTarget && (
         <DeployDialog
           agent={deployTarget}
+          onGoRecharge={onGoRecharge}
           onClose={() => {
             setDeployTarget(null)
             if (onDeploy) onDeploy(deployTarget)

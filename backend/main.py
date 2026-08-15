@@ -12,6 +12,7 @@ from routes.stop import router as stop_router
 from routes.admin import router as admin_router
 from routes.auth import router as auth_router
 from routes.public_settings import router as public_settings_router
+from routes.payment import router as payment_router
 
 app = FastAPI(title="Agent Tenant Platform")
 
@@ -38,6 +39,7 @@ app.include_router(admin_router)
 app.include_router(status_router)
 app.include_router(auth_router)
 app.include_router(public_settings_router)
+app.include_router(payment_router)
 
 
 if __name__ == "__main__":

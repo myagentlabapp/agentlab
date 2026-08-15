@@ -170,6 +170,8 @@ def manage_agents(_admin: User = Depends(get_admin_user), db: Session = Depends(
             "icon": a.icon,
             "image": a.image,
             "price_monthly": a.price_monthly,
+            "price_hourly": getattr(a, "price_hourly", 0) or 0,
+            "billing_modes": (getattr(a, "billing_modes", "monthly") or "monthly").split(","),
             "enabled": getattr(a, "enabled", 1) != 0,
         }
         for a in agents
@@ -181,7 +183,9 @@ class AgentUpdate(BaseModel):
     description: str = None
     icon: str = None
     image: str = None
-    price_monthly: int = None
+    price_monthly: float = None
+    price_hourly: float = None
+    billing_modes: list = None  # 数组，如 ["monthly","hourly"]；存库时转逗号串
     enabled: bool = None
 
 
@@ -201,6 +205,10 @@ def update_agent(agent_id: str, req: AgentUpdate, _admin: User = Depends(get_adm
         agent.image = req.image
     if req.price_monthly is not None:
         agent.price_monthly = req.price_monthly
+    if req.price_hourly is not None:
+        agent.price_hourly = req.price_hourly
+    if req.billing_modes is not None:
+        agent.billing_modes = ",".join(req.billing_modes) if isinstance(req.billing_modes, list) else req.billing_modes
     if req.enabled is not None:
         setattr(agent, "enabled", 1 if req.enabled else 0)
     db.commit()
@@ -223,6 +231,8 @@ def create_agent(req: AgentUpdate, _admin: User = Depends(get_admin_user), db: S
         icon=req.icon or "🤖",
         image=req.image,
         price_monthly=req.price_monthly or 0,
+        price_hourly=req.price_hourly or 0,
+        billing_modes=(",".join(req.billing_modes) if isinstance(req.billing_modes, list) else (req.billing_modes or "monthly")),
         enabled=1 if req.enabled is not False else 1,
     )
     db.add(agent)
@@ -264,6 +274,7 @@ def user_manage(_admin: User = Depends(get_admin_user), db: Session = Depends(ge
             "is_admin": bool(u.is_admin),
             "enabled": getattr(u, "enabled", 1) != 0,
             "created_at": u.created_at.isoformat() if u.created_at else None,
+            "balance": round(getattr(u, "balance", 0) or 0, 2),
             "instances": by_user.get(u.id, {"total": 0, "running": 0}),
         }
         for u in users
@@ -272,6 +283,7 @@ def user_manage(_admin: User = Depends(get_admin_user), db: Session = Depends(ge
 
 class UserManageReq(BaseModel):
     enabled: bool = None
+    is_admin: bool = None
 
 
 @router.put("/user-manage/{user_id}")
@@ -280,12 +292,16 @@ def update_user(user_id: str, req: UserManageReq, _admin: User = Depends(get_adm
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    if user.is_admin:
-        raise HTTPException(status_code=400, detail="不能禁用管理员")
     if req.enabled is not None:
+        if user.is_admin and not req.enabled:
+            raise HTTPException(status_code=400, detail="不能禁用管理员")
         setattr(user, "enabled", 1 if req.enabled else 0)
-        db.commit()
-    return {"success": True, "enabled": bool(user.enabled)}
+    if req.is_admin is not None:
+        setattr(user, "is_admin", 1 if req.is_admin else 0)
+        if req.is_admin:
+            setattr(user, "enabled", 1)
+    db.commit()
+    return {"success": True, "enabled": bool(user.enabled), "is_admin": bool(user.is_admin)}
 
 
 class ResetPwdReq(BaseModel):
@@ -415,3 +431,65 @@ def log_action(db, user_id, action, agent_id, status="success"):
         db.commit()
     except Exception:
         pass
+
+
+# ---- 实例管理（延长/回收/日志） ----
+
+class ExtendLeaseReq(BaseModel):
+    extend_days: int = None      # 延长天数（按天计价从用户余额扣）
+    action: str = None           # "recycle" 强制回收
+
+
+@router.put("/leases/{lease_id}")
+def manage_lease(lease_id: str, req: ExtendLeaseReq, _admin: User = Depends(get_admin_user), db: Session = Depends(get_db)):
+    """延长租期（扣用户余额）或强制回收"""
+    from datetime import timedelta
+    from settings_store import get_setting
+
+    lease = db.query(Lease).filter(Lease.id == lease_id).first()
+    if not lease:
+        raise HTTPException(status_code=404, detail="Lease not found")
+
+    if req.action == "recycle":
+        from docker_manager import stop_container
+        stop_container(lease.id)
+        lease.status = "recycled"
+        db.commit()
+        return {"success": True, "lease_id": lease_id, "status": "recycled"}
+
+    if req.extend_days:
+        if req.extend_days < 1 or req.extend_days > 90:
+            raise HTTPException(status_code=400, detail="延长天数 1-90")
+        user = db.query(User).filter(User.id == lease.user_id).first()
+        # 按天费率（usage 费率或按月折算）
+        daily = float(get_setting("usage_daily_rate", "1") or 1)
+        agent = db.query(Agent).filter(Agent.id == lease.agent_id).first()
+        if agent and agent.price_monthly:
+            daily = agent.price_monthly / 30.0
+        cost = round(daily * req.extend_days, 2)
+        bal = (user.balance or 0) if user else 0
+        if bal < cost:
+            raise HTTPException(status_code=402, detail=f"用户余额不足：需 ¥{cost:.2f}，余额 ¥{bal:.2f}")
+        if user:
+            user.balance = round(bal - cost, 2)
+        lease.expires_at = lease.expires_at + timedelta(days=req.extend_days)
+        lease.status = "running"
+        db.commit()
+        return {"success": True, "lease_id": lease_id, "expires_at": lease.expires_at.isoformat(), "cost": cost}
+
+    raise HTTPException(status_code=400, detail="需要 extend_days 或 action=recycle")
+
+
+@router.get("/leases/{lease_id}/logs")
+def lease_logs(lease_id: str, lines: int = 100, _admin: User = Depends(get_admin_user)):
+    """容器日志"""
+    try:
+        ct = client.containers.list(all=True, filters={"label": f"lease_id={lease_id}"})
+        if not ct:
+            raise HTTPException(status_code=404, detail="容器不存在")
+        logs = ct[0].logs(tail=min(max(lines, 10), 500)).decode(errors="ignore")
+        return {"lease_id": lease_id, "logs": logs}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"读取日志失败: {e}")

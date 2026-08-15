@@ -15,7 +15,7 @@ function SettingsPanel({ onSaved }) {
   const [logs, setLogs] = useState([]);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [newAgent, setNewAgent] = useState({ name: '', image: '', description: '', icon: '🤖', price_monthly: 0 });
+  const [newAgent, setNewAgent] = useState({ name: '', image: '', description: '', icon: '🤖', price_monthly: 0, price_hourly: 0, billing_modes: ['monthly'] });
   const [backupData, setBackupData] = useState(null);
   const [pwdForm, setPwdForm] = useState({ old: '', neu: '' });
 
@@ -43,7 +43,7 @@ function SettingsPanel({ onSaved }) {
     if (!newAgent.name || !newAgent.image) { setError('名称和镜像必填'); return; }
     try {
       await adminCreateAgent(newAgent);
-      setNewAgent({ name: '', image: '', description: '', icon: '🤖', price_monthly: 0 });
+      setNewAgent({ name: '', image: '', description: '', icon: '🤖', price_monthly: 0, price_hourly: 0, billing_modes: ['monthly'] });
       adminGetAgents().then(setAgents);
       flash();
     } catch (e) { setError(e.message); }
@@ -176,7 +176,21 @@ function SettingsPanel({ onSaved }) {
               <div className="form-item"><label>名称 *</label><input value={newAgent.name} onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })} /></div>
               <div className="form-item"><label>镜像 *</label><input value={newAgent.image} placeholder="your-registry/xxx:latest" onChange={(e) => setNewAgent({ ...newAgent, image: e.target.value })} /></div>
               <div className="form-item"><label>图标</label><input value={newAgent.icon} onChange={(e) => setNewAgent({ ...newAgent, icon: e.target.value })} /></div>
-              <div className="form-item"><label>月租（元）</label><input type="number" min="0" value={newAgent.price_monthly} onChange={(e) => setNewAgent({ ...newAgent, price_monthly: parseInt(e.target.value) || 0 })} /></div>
+              <div className="form-item"><label>月租（元）</label><input type="number" min="0" value={newAgent.price_monthly} onChange={(e) => setNewAgent({ ...newAgent, price_monthly: parseFloat(e.target.value) || 0 })} /></div>
+              <div className="form-item"><label>时租（元）</label><input type="number" min="0" step="0.01" value={newAgent.price_hourly} onChange={(e) => setNewAgent({ ...newAgent, price_hourly: parseFloat(e.target.value) || 0 })} /></div>
+              <div className="form-item full"><label>计费模式</label>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  {['monthly', 'hourly', 'usage'].map((m) => (
+                    <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="checkbox" checked={newAgent.billing_modes.includes(m)} onChange={(e) => {
+                        const modes = e.target.checked ? [...newAgent.billing_modes, m] : newAgent.billing_modes.filter((x) => x !== m)
+                        setNewAgent({ ...newAgent, billing_modes: modes })
+                      }} />
+                      {m === 'monthly' ? '按月' : m === 'hourly' ? '按小时' : '按量'}
+                    </label>
+                  ))}
+                </div>
+              </div>
               <div className="form-item full"><label>描述</label><input value={newAgent.description} onChange={(e) => setNewAgent({ ...newAgent, description: e.target.value })} /></div>
             </div>
             <button className="save-btn" onClick={createAgent}>创建 Agent</button>
@@ -196,7 +210,21 @@ function SettingsPanel({ onSaved }) {
                 <div className="form-item"><label>图标</label><input value={a.icon} onChange={(e) => updateAgent(a.id, { icon: e.target.value })} /></div>
                 <div className="form-item full"><label>描述</label><textarea rows="2" value={a.description} onChange={(e) => updateAgent(a.id, { description: e.target.value })} /></div>
                 <div className="form-item"><label>镜像</label><input value={a.image} onChange={(e) => updateAgent(a.id, { image: e.target.value })} /></div>
-                <div className="form-item"><label>月租（元）</label><input type="number" min="0" value={a.price_monthly} onChange={(e) => updateAgent(a.id, { price_monthly: parseInt(e.target.value) || 0 })} /></div>
+                <div className="form-item"><label>月租（元）</label><input type="number" min="0" value={a.price_monthly} onChange={(e) => updateAgent(a.id, { price_monthly: parseFloat(e.target.value) || 0 })} /></div>
+                <div className="form-item"><label>时租（元）</label><input type="number" min="0" step="0.01" value={a.price_hourly} onChange={(e) => updateAgent(a.id, { price_hourly: parseFloat(e.target.value) || 0 })} /></div>
+                <div className="form-item full"><label>计费模式</label>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    {['monthly', 'hourly', 'usage'].map((m) => (
+                      <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="checkbox" checked={(a.billing_modes || ['monthly']).includes(m)} onChange={(e) => {
+                          const modes = e.target.checked ? [...(a.billing_modes || ['monthly']), m] : (a.billing_modes || ['monthly']).filter((x) => x !== m)
+                          updateAgent(a.id, { billing_modes: modes })
+                        }} />
+                        {m === 'monthly' ? '按月' : m === 'hourly' ? '按小时' : '按量'}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           ))}
@@ -206,12 +234,13 @@ function SettingsPanel({ onSaved }) {
       {/* ===== 用户管理 ===== */}
       {tab === 'users' && (
         <table className="admin-table">
-          <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>实例(运行中/总数)</th><th>注册时间</th><th>操作</th></tr></thead>
+          <thead><tr><th>用户名</th><th>角色</th><th>余额</th><th>状态</th><th>实例(运行中/总数)</th><th>注册时间</th><th>操作</th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td>{u.username}</td>
                 <td>{u.is_admin ? '管理员' : '普通用户'}</td>
+                <td>¥{u.balance || 0}</td>
                 <td className={u.enabled ? 'green' : ''}>{u.enabled ? '正常' : '已禁用'}</td>
                 <td>{u.instances.running}/{u.instances.total}</td>
                 <td>{u.created_at ? u.created_at.slice(0, 10) : '-'}</td>
@@ -220,6 +249,9 @@ function SettingsPanel({ onSaved }) {
                     <>
                       <button className="toggle-btn" onClick={() => adminUpdateUser(u.id, { enabled: !u.enabled }).then(() => adminUserManage().then(setUsers))}>
                         {u.enabled ? '禁用' : '启用'}
+                      </button>{' '}
+                      <button className="toggle-btn" onClick={() => adminUpdateUser(u.id, { is_admin: !u.is_admin }).then(() => adminUserManage().then(setUsers))}>
+                        {u.is_admin ? '取消管理员' : '设为管理员'}
                       </button>{' '}
                       <button className="toggle-btn" onClick={() => doResetUserPwd(u.id)}>重置密码</button>
                     </>
@@ -376,6 +408,35 @@ function SettingsPanel({ onSaved }) {
             </div>
           </div>
           <button className="save-btn" onClick={saveSettings}>保存 LLDAP 配置</button>
+
+          <hr className="settings-hr" />
+          <h4>💳 支付（虎皮椒）</h4>
+          <div className="settings-grid">
+            <div className="form-item full">
+              <label>开启支付</label>
+              <select value={settings.payment_enabled || 'false'} onChange={set('payment_enabled')}>
+                <option value="false">关闭（免费模式）</option>
+                <option value="true">开启</option>
+              </select>
+            </div>
+            <div className="form-item">
+              <label>虎皮椒 AppID</label>
+              <input value={settings.xunhupay_appid || ''} placeholder="2019xxxxxxxx" onChange={set('xunhupay_appid')} />
+            </div>
+            <div className="form-item">
+              <label>虎皮椒 AppSecret</label>
+              <input type="password" value={settings.xunhupay_appsecret || ''} placeholder="商户密钥" onChange={set('xunhupay_appsecret')} />
+            </div>
+            <div className="form-item">
+              <label>usage 计费日费率（元/天）</label>
+              <input value={settings.usage_daily_rate || '1'} placeholder="1" onChange={set('usage_daily_rate')} />
+            </div>
+            <div className="form-item">
+              <label>回收检查间隔（秒）</label>
+              <input value={settings.reaper_interval || '60'} placeholder="60" onChange={set('reaper_interval')} />
+            </div>
+          </div>
+          <button className="save-btn" onClick={saveSettings}>保存支付配置</button>
 
           <hr className="settings-hr" />
           <h4>🔑 修改密码</h4>

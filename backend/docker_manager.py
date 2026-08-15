@@ -107,7 +107,7 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
     # hermesfix2 残留的 `sh -c 'chown...'` 入口, 容器起不来真正服务)。
     hermes_user = None
     if agent_id == "hermes":
-        image = "myagentlab/hermes:hermesfix2"
+        image = "myagentlab/hermes:hermesfix3"
         hermes_user = "hermes"
 
     # 每租户独立 bridge 网络(隔离租户间与宿主其它容器的横向访问)

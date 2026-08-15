@@ -26,8 +26,8 @@ DEFAULTS = {
     "free_mode": "true",
     "footer_links": json.dumps([], ensure_ascii=False),
     # ---- 平台域名（部署期从 .env 读，运行期可在后台改） ----
-    "platform_domain": get_env("PLATFORM_DOMAIN", ""),        # 域名主体，如 myagentlab.homes
-    "platform_url": get_env("PLATFORM_URL", ""),              # 平台前端完整地址，如 https://agent.myagentlab.homes
+    "platform_domain": get_env("PLATFORM_DOMAIN", ""),        # 域名主体，如 example.com
+    "platform_url": get_env("PLATFORM_URL", ""),              # 平台前端完整地址，如 https://agent.example.com
     # ---- 扩展品牌 ----
     "brand_icp": "",                    # ICP 备案号
     "brand_stat_script": "",            # 统计代码（umami/GA）

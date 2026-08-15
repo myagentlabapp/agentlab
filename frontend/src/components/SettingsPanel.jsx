@@ -109,8 +109,8 @@ function SettingsPanel({ onSaved }) {
         <div className="settings-form">
           <div className="settings-grid">
             <div className="form-item"><label>站点名称</label><input value={settings.brand_name || ''} onChange={set('brand_name')} /></div>
-            <div className="form-item"><label>平台域名</label><input value={settings.platform_domain || ''} placeholder="myagentlab.homes（租户实例子域名后缀）" onChange={set('platform_domain')} /></div>
-            <div className="form-item"><label>平台前端地址</label><input value={settings.platform_url || ''} placeholder="https://agent.myagentlab.homes（登录跳转/链接用）" onChange={set('platform_url')} /></div>
+            <div className="form-item"><label>平台域名</label><input value={settings.platform_domain || ''} placeholder="example.com（租户实例子域名后缀）" onChange={set('platform_domain')} /></div>
+            <div className="form-item"><label>平台前端地址</label><input value={settings.platform_url || ''} placeholder="https://agent.example.com（登录跳转/链接用）" onChange={set('platform_url')} /></div>
             <div className="form-item"><label>Logo 链接</label>
               <input value={settings.brand_logo || ''} placeholder="图床图片链接，如 https://xxx.com/logo.png" onChange={set('brand_logo')} />
               {settings.brand_logo && (

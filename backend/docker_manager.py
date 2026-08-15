@@ -96,6 +96,20 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
     cport = AGENT_CONTAINER_PORT.get(agent_id, "8080")
     access_password = generate_access_password()
 
+    # ---- hermes 专用: 用预 chown 修复镜像, 绕过官方镜像的 root 守卫 ----
+    # 官方 myagentlab/hermes:latest 是 root-owned 文件系统, hermes gateway 在
+    # /opt/hermes 检出环境里拒绝以 root 启动
+    # (见 hermes_cli/gateway.py _guard_official_docker_root_gateway), 否则 webui 的
+    # gateway-runner 会循环崩溃 (code=1) → chat 消息无人处理 → 前端 timeout。
+    # 解决: 改用预 chown 镜像 myagentlab/hermes:hermesfix2(内部 /home/agent 与
+    # .hermes 已 chown 给 hermes 用户 uid=10000), 容器整体以 hermes 用户启动 →
+    # 进程 geteuid()!=0, 守卫直接放行; 同时显式覆盖 entrypoint 为 node(否则会跑
+    # hermesfix2 残留的 `sh -c 'chown...'` 入口, 容器起不来真正服务)。
+    hermes_user = None
+    if agent_id == "hermes":
+        image = "myagentlab/hermes:hermesfix2"
+        hermes_user = "hermes"
+
     # 每租户独立 bridge 网络(隔离租户间与宿主其它容器的横向访问)
     network_name = f"tenant-net-{lease_id[:8]}"
     try:
@@ -131,14 +145,10 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         )
         environment["OPENAI_MODEL_LIST"] = f"-all,+{DEFAULT_OPENCLAW_MODEL}"
 
-    # ---- hermes 专用: 以镜像内 hermes 用户(uid=10000)运行, 绕过官方镜像的 root 守卫 ----
-    # 镜像默认 USER=root, 但 hermes gateway 在 /opt/hermes 检出环境里拒绝以 root 启动
-    # (见 hermes_cli/gateway.py _guard_official_docker_root_gateway), 否则 webui 的
-    # gateway-runner 会循环崩溃 (code=1) → chat 消息无人处理 → 前端 timeout。
-    # 解决: 容器整体以 hermes 用户启动 → 进程 geteuid()!=0, 守卫直接放行;
-    # 并在容器启动后用一次 root exec_run 把 /home/agent 属主 chown 给 hermes,
-    # 否则 hermes 用户无法读写 root 占有的 ~/.hermes → gateway/bridge 起不来。
-    hermes_user = "hermes" if agent_id == "hermes" else None
+    # ---- hermes 容器以 hermes 用户运行 + 显式 entrypoint=node ----
+    # hermesfix2 镜像入口残留为 `sh -c 'chown...'`, 必须覆盖成 node 才能启动真正服务
+    # (实测: --user hermes --entrypoint node ... hermesfix2 dist/server/index.js)。
+    # hermesfix2 已预 chown, 不再需要容器内 exec chown(cap_drop ALL 下也必然失败)。
 
     run_kwargs = dict(
         name=container_name,
@@ -157,23 +167,13 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         network=network_name,
     )
     if hermes_user:
-        # hermes 容器以非特权用户运行
+        # hermes 容器以非特权用户运行 + 显式覆盖 entrypoint 为 node
+        # (hermesfix2 镜像残留入口是 `sh -c 'chown...'`, 不覆盖则容器起不来真正服务)
         run_kwargs["user"] = hermes_user
+        run_kwargs["entrypoint"] = "node"
+        run_kwargs["command"] = "dist/server/index.js"
 
     container = client.containers.run(image, **run_kwargs)
-
-    # hermes: 容器已以 hermes 身份起来, 但初次部署时 /home/agent 可能还是 root 所有
-    # (hermes-web-ui 首次启动以 root 写入), 这里用一次 root exec 修正属主, 保证后续
-    # gateway/bridge 能读写 ~/.hermes。若容器已退出则跳过(下次 restart 会自愈)。
-    if hermes_user:
-        try:
-            container.exec_run(
-                user="root",
-                cmd="sh -c 'chown -R 10000:10000 /home/agent /opt/data 2>/dev/null; exit 0'",
-                stderr=False,
-            )
-        except Exception:
-            pass
 
     return container, access_password
 

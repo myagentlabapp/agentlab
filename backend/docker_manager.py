@@ -128,6 +128,15 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         "AUTH_USERNAME": "admin",
     }
 
+    if agent_id == "hermes":
+        # CORS_ORIGINS: socket.io allowRequest 在 CORS_ORIGINS 未配置时退化为同源校验
+        # (要求 Origin.host === Host.host)。proxy 上游连接 Host=127.0.0.1:port(websockets
+        # 库忽略 additional_headers 的 Host), 与浏览器 Origin=租户域名不同源 -> 400
+        # "origin not allowed" -> WS 握手失败 -> 前端 socket.io 首选 WS 失败且不 fallback
+        # -> chat timeout。设置 allowlist 后 allowRequest 优先走 allowlist, 不再做同源校验。
+        # (2026-08-15 F1c 根因)
+        environment["CORS_ORIGINS"] = f"https://{lease_id[:8]}.myagentlab.homes"
+
     volumes = {}
     if agent_id == "openclaw":
         # 真 OpenClaw Gateway: 挂载 openclaw.json + 注入 gateway token
@@ -143,6 +152,10 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         environment["DEFAULT_AGENT_CONFIG"] = json.dumps(
             {"model": DEFAULT_OPENCLAW_MODEL, "provider": "openai"}, ensure_ascii=False
         )
+        # 覆盖镜像 Dockerfile 内置 DEFAULT_AGENT_MODEL=glm-4.7(网关不可用模型):
+        # 该环境变量在部分镜像构建/旧版本中会被默认会话创建逻辑读取,
+        # 显式覆盖为网关唯一可用模型, 防止新租户默认模型指向不存在的 glm-4.7。(F5)
+        environment["DEFAULT_AGENT_MODEL"] = DEFAULT_OPENCLAW_MODEL
         environment["OPENAI_MODEL_LIST"] = f"-all,+{DEFAULT_OPENCLAW_MODEL}"
 
     # ---- hermes 容器以 hermes 用户运行 + 显式 entrypoint=node ----

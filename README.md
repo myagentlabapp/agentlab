@@ -1,4 +1,6 @@
-# Agent 租赁平台（Agent Tenant Platform）
+# 智体工坊（AgentLab）
+
+> 英文仓库名 **AgentLab**（组织 myagentlabapp / 仓库 agentlab），中文品牌 **智体工坊**，隶属 myagentlab 产品线。
 
 > 多租户 AI Agent 托管平台：用户付费/免费租用 AI Agent（OpenClaw / Hermes / LobeChat），
 > 每个实例 = 独立 Docker 容器 + 独立公网 HTTPS 子域名 + 用户自己的 API Key。

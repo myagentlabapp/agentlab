@@ -3,7 +3,7 @@
 from app_secrets import get_env
 
 MACHINE_IP = get_env("MACHINE_IP", "127.0.0.1")
-OPENAI_BASE_URL = get_env("OPENAI_BASE_URL", "https://api.example.com/v1")
+OPENAI_BASE_URL = get_env("OPENAI_BASE_URL", "")
 API_BASE_URL = OPENAI_BASE_URL
 
 DB_PATH = "data.db"

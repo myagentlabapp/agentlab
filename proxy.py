@@ -1,7 +1,9 @@
 """Agent 实例动态反向代理：Host 子域名 -> 查库拿端口 -> JWT 校验 -> 转发到本地容器端口
 支持两种域名格式：
-  {lease_prefix}.myagentlab.homes        (一级子域，证书免费覆盖)
-  {lease_prefix}.agent.myagentlab.homes  (兼容旧格式)
+  {lease_prefix}.{platform_domain}            (一级子域，证书免费覆盖)
+  {lease_prefix}.agent.{platform_domain}      (兼容旧格式)
+
+platform_domain 从 DB settings 表读取（后台可配置），未配置时回退 .env PLATFORM_DOMAIN。
 
 v3 安全：JWT 认证 + 归属校验
   - 请求必须带平台登录 token（Cookie myagentlab_token 或 Authorization Bearer）
@@ -25,20 +27,46 @@ from fastapi.responses import Response, JSONResponse, RedirectResponse
 
 DB_PATH = ".AGENT_PLATFORM_ROOT/backend/data.db"
 ENV_FILE = ".AGENT_PLATFORM_ROOT/backend/.env"
-LOGIN_URL = "https://agent.myagentlab.homes/login"
 COOKIE_NAME = "myagentlab_token"
 JWT_ALGO = "HS256"
 
 
-def _load_jwt_secret():
-    """从 backend/.env 读 JWT_SECRET（与 app_secrets 同款逻辑，proxy 独立进程）"""
+def _load_env():
+    env = {}
     if os.path.exists(ENV_FILE):
         with open(ENV_FILE) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("JWT_SECRET="):
-                    return line.split("=", 1)[1].strip()
-    return None
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+    return env
+
+
+def _load_platform_conf():
+    """从 DB settings 读 platform_domain / platform_url，回退 .env"""
+    env = _load_env()
+    domain = env.get("PLATFORM_DOMAIN", "")
+    url = env.get("PLATFORM_URL", "")
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        rows = dict(conn.execute("SELECT key, value FROM settings WHERE key IN ('platform_domain','platform_url')").fetchall())
+        conn.close()
+        domain = rows.get("platform_domain") or domain
+        url = rows.get("platform_url") or url
+    except Exception:
+        pass
+    return domain.strip(), url.strip()
+
+
+PLATFORM_DOMAIN, PLATFORM_URL = _load_platform_conf()
+LOGIN_URL = (PLATFORM_URL or f"https://agent.{PLATFORM_DOMAIN}" if PLATFORM_DOMAIN else "") + "/login"
+
+
+def _load_jwt_secret():
+    """从 backend/.env 读 JWT_SECRET（与 app_secrets 同款逻辑，proxy 独立进程）"""
+    env = _load_env()
+    return env.get("JWT_SECRET", "") or None
 
 
 JWT_SECRET = _load_jwt_secret()
@@ -81,13 +109,17 @@ def find_lease(prefix: str):
 
 def extract_prefix(host: str) -> str | None:
     """从 Host 头提取 lease 前缀"""
+    if not PLATFORM_DOMAIN:
+        return None
     host = host.split(":")[0]
-    if host.endswith(".myagentlab.homes"):
-        sub = host[: -len(".myagentlab.homes")]
+    suffix = "." + PLATFORM_DOMAIN
+    if host.endswith(suffix):
+        sub = host[: -len(suffix)]
         if sub and "." not in sub:
             return sub
-    if host.endswith(".agent.myagentlab.homes"):
-        sub = host[: -len(".agent.myagentlab.homes")]
+    legacy_suffix = ".agent." + PLATFORM_DOMAIN
+    if host.endswith(legacy_suffix):
+        sub = host[: -len(legacy_suffix)]
         if sub and "." not in sub:
             return sub
     return None
@@ -125,6 +157,12 @@ def check_auth(request: Request, lease: dict) -> str | None:
         return "无权访问该实例"
     return None
 
+
+
+
+@app.get("/__proxy_health")
+async def health():
+    return {"status": "ok", "jwt_secret_loaded": bool(JWT_SECRET), "platform_domain": PLATFORM_DOMAIN}
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy(path: str, request: Request):
@@ -175,10 +213,6 @@ async def proxy(path: str, request: Request):
     except httpx.HTTPError:
         return JSONResponse({"detail": "upstream error"}, status_code=502)
 
-
-@app.get("/__proxy_health")
-async def health():
-    return {"status": "ok", "jwt_secret_loaded": bool(JWT_SECRET)}
 
 
 if __name__ == "__main__":

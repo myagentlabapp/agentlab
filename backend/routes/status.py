@@ -10,9 +10,15 @@ from routes.auth import get_current_user
 router = APIRouter(prefix="/api", tags=["status"])
 
 
+def _platform_domain() -> str:
+    from settings_store import get_setting
+    return (get_setting("platform_domain", "") or "").strip()
+
+
 def _lease_to_dict(lease: Lease, agent: Agent = None):
     agent_name = agent.name if agent else lease.agent_id
-    url = f"https://{lease.id[:8]}.myagentlab.homes" if lease.status == "running" else None
+    domain = _platform_domain()
+    url = f"https://{lease.id[:8]}.{domain}" if (lease.status == "running" and domain) else None
     return {
         "id": lease.id,
         "agent_id": lease.agent_id,

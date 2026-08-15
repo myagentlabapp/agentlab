@@ -1,7 +1,7 @@
-
 """Agent 实例公网子域名注册/注销（Cloudflare API）
-每个 lease 分配 {lease_id[:8]}.myagentlab.homes 一级子域
-（一级子域被 *.myagentlab.homes Universal 证书免费覆盖，无需等证书）
+每个 lease 分配 {lease_id[:8]}.{platform_domain} 一级子域
+（一级子域被 *.{platform_domain} Universal 证书免费覆盖，无需等证书）
+域名主体从 settings 读取（platform_domain），未配置则跳过 CF 注册走内网直连。
 """
 import json
 import ssl
@@ -18,6 +18,12 @@ PROXY_TARGET = get_env("PROXY_TARGET", "http://127.0.0.1:80")
 _ctx = ssl.create_default_context()
 _ctx.check_hostname = False
 _ctx.verify_mode = ssl.CERT_NONE
+
+
+def _platform_domain() -> str:
+    """读取配置的域名主体（后台可改）"""
+    from settings_store import get_setting
+    return (get_setting("platform_domain", "") or "").strip()
 
 
 def _api(base, method, path, body=None):
@@ -42,13 +48,18 @@ def _zone(method, path, body=None):
 
 
 def subdomain(lease_id: str) -> str:
-    """生成租户子域名"""
-    return f"{lease_id[:8]}.myagentlab.homes"
+    """生成租户子域名；未配置域名返回空串（走内网直连）"""
+    domain = _platform_domain()
+    if not domain:
+        return ""
+    return f"{lease_id[:8]}.{domain}"
 
 
 def register_subdomain(lease_id: str) -> str | None:
     """注册子域名（DNS CNAME + tunnel ingress），返回完整 https 地址；失败返回 None"""
     sub = subdomain(lease_id)
+    if not sub:
+        return None  # 未配置域名 → deploy.py 走内网直连 fallback
     # 1. DNS CNAME（幂等：已存在则跳过）
     dns = _zone("GET", f"dns_records?name={sub}&type=CNAME")
     exists = any(r["name"] == sub for r in dns.get("result", []))
@@ -77,6 +88,8 @@ def register_subdomain(lease_id: str) -> str | None:
 def unregister_subdomain(lease_id: str) -> None:
     """注销子域名（部署失败/停止时清理）"""
     sub = subdomain(lease_id)
+    if not sub:
+        return
     # 1. 删 DNS
     dns = _zone("GET", f"dns_records?name={sub}")
     for rec in dns.get("result", []):

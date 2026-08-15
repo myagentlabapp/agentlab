@@ -43,6 +43,7 @@ class User(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     is_admin = Column(Integer, nullable=False, default=0)
+    email = Column(String, nullable=True, default="")
     enabled = Column(Integer, nullable=False, default=1)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 

@@ -73,6 +73,8 @@ def all_leases(db: Session = Depends(get_db), _admin: User = Depends(get_admin_u
     """全部实例总览（含容器实时状态）"""
     leases = db.query(Lease).all()
     agents = {a.id: a for a in db.query(Agent).all()}
+    from settings_store import get_setting
+    _pd = (get_setting("platform_domain", "") or "").strip()
     result = []
     for l in leases:
         agent = agents.get(l.agent_id)
@@ -83,7 +85,7 @@ def all_leases(db: Session = Depends(get_db), _admin: User = Depends(get_admin_u
             "user_id": l.user_id,
             "port": l.port,
             "status": l.status,
-            "url": f"https://{l.id[:8]}.myagentlab.homes" if l.status == "running" else None,
+            "url": (f"https://{l.id[:8]}." + _pd) if (l.status == "running" and _pd) else None,
             "started_at": l.started_at.isoformat() if l.started_at else None,
             "expires_at": l.expires_at.isoformat() if l.expires_at else None,
         })

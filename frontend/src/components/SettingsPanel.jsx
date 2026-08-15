@@ -109,6 +109,8 @@ function SettingsPanel({ onSaved }) {
         <div className="settings-form">
           <div className="settings-grid">
             <div className="form-item"><label>站点名称</label><input value={settings.brand_name || ''} onChange={set('brand_name')} /></div>
+            <div className="form-item"><label>平台域名</label><input value={settings.platform_domain || ''} placeholder="myagentlab.homes（租户实例子域名后缀）" onChange={set('platform_domain')} /></div>
+            <div className="form-item"><label>平台前端地址</label><input value={settings.platform_url || ''} placeholder="https://agent.myagentlab.homes（登录跳转/链接用）" onChange={set('platform_url')} /></div>
             <div className="form-item"><label>Logo 链接</label>
               <input value={settings.brand_logo || ''} placeholder="图床图片链接，如 https://xxx.com/logo.png" onChange={set('brand_logo')} />
               {settings.brand_logo && (
@@ -172,7 +174,7 @@ function SettingsPanel({ onSaved }) {
             <h4>➕ 新增 Agent</h4>
             <div className="agent-manage-body">
               <div className="form-item"><label>名称 *</label><input value={newAgent.name} onChange={(e) => setNewAgent({ ...newAgent, name: e.target.value })} /></div>
-              <div className="form-item"><label>镜像 *</label><input value={newAgent.image} placeholder="myagentlab/xxx:latest" onChange={(e) => setNewAgent({ ...newAgent, image: e.target.value })} /></div>
+              <div className="form-item"><label>镜像 *</label><input value={newAgent.image} placeholder="your-registry/xxx:latest" onChange={(e) => setNewAgent({ ...newAgent, image: e.target.value })} /></div>
               <div className="form-item"><label>图标</label><input value={newAgent.icon} onChange={(e) => setNewAgent({ ...newAgent, icon: e.target.value })} /></div>
               <div className="form-item"><label>月租（元）</label><input type="number" min="0" value={newAgent.price_monthly} onChange={(e) => setNewAgent({ ...newAgent, price_monthly: parseInt(e.target.value) || 0 })} /></div>
               <div className="form-item full"><label>描述</label><input value={newAgent.description} onChange={(e) => setNewAgent({ ...newAgent, description: e.target.value })} /></div>
@@ -259,6 +261,123 @@ function SettingsPanel({ onSaved }) {
       {/* ===== 安全与备份 ===== */}
       {tab === 'security' && (
         <div className="settings-form">
+          <h4>🛡️ Cloudflare Turnstile 人机验证</h4>
+          <p className="muted">
+            防机器人批量注册/暴力登录。前往
+            <a href="https://dash.cloudflare.com/?to=/:account/turnstile" target="_blank" rel="noopener" style={{color: '#4f46e5'}}>Cloudflare Turnstile</a>
+            创建站点，拿到 Site Key + Secret Key 填入下方。域名填入平台域名（如 agent.example.com）。
+          </p>
+          <div className="settings-grid">
+            <div className="form-item full">
+              <label>开启 Turnstile</label>
+              <select value={settings.turnstile_enabled || 'false'} onChange={set('turnstile_enabled')}>
+                <option value="false">关闭（默认）</option>
+                <option value="true">开启</option>
+              </select>
+            </div>
+            <div className="form-item">
+              <label>Site Key（公开）</label>
+              <input value={settings.turnstile_site_key || ''} placeholder="0x4AAAAAAA..." onChange={set('turnstile_site_key')} />
+            </div>
+            <div className="form-item">
+              <label>Secret Key（保密）</label>
+              <input type="password" value={settings.turnstile_secret_key || ''} placeholder="0x4AAAAAAA..." onChange={set('turnstile_secret_key')} />
+            </div>
+          </div>
+          <button className="save-btn" onClick={saveSettings}>保存 Turnstile 配置</button>
+
+          <hr className="settings-hr" />
+          <h4>🛡️ 登录限流/锁定</h4>
+          <p className="muted">自动拦截暴力登录尝试。连续失败 N 次锁定账号 M 分钟。</p>
+          <div className="settings-grid">
+            <div className="form-item"><label>每 IP 每分钟登录上限</label><input type="number" value={settings.login_rate_limit || '10'} onChange={set('login_rate_limit')} /></div>
+            <div className="form-item"><label>连续失败锁定阈值</label><input type="number" value={settings.login_lockout_threshold || '5'} onChange={set('login_lockout_threshold')} /></div>
+            <div className="form-item"><label>锁定时长（分钟）</label><input type="number" value={settings.login_lockout_minutes || '15'} onChange={set('login_lockout_minutes')} /></div>
+          </div>
+          <button className="save-btn" onClick={saveSettings}>保存限流配置</button>
+
+          <hr className="settings-hr" />
+          <h4>📧 邮箱注册（SMTP）</h4>
+          <p className="muted">
+            开启后注册需填邮箱+验证码。支持 QQ/163/Gmail 等邮箱，填入 SMTP 授权码（非登录密码）。
+            <br />例：QQ邮箱 → smtp.qq.com:465(SSL)；163邮箱 → smtp.163.com:465(SSL)；Gmail → smtp.gmail.com:465(SSL)
+          </p>
+          <div className="settings-grid">
+            <div className="form-item full">
+              <label>开启邮箱注册</label>
+              <select value={settings.email_register_enabled || 'false'} onChange={set('email_register_enabled')}>
+                <option value="false">关闭（默认）</option>
+                <option value="true">开启</option>
+              </select>
+            </div>
+            <div className="form-item">
+              <label>SMTP 服务器</label>
+              <input value={settings.smtp_host || ''} placeholder="smtp.qq.com" onChange={set('smtp_host')} />
+            </div>
+            <div className="form-item">
+              <label>SMTP 端口</label>
+              <input type="number" value={settings.smtp_port || '465'} onChange={set('smtp_port')} />
+            </div>
+            <div className="form-item">
+              <label>发件邮箱</label>
+              <input value={settings.smtp_username || ''} placeholder="xxx@qq.com" onChange={set('smtp_username')} />
+            </div>
+            <div className="form-item">
+              <label>授权码</label>
+              <input type="password" value={settings.smtp_password || ''} placeholder="SMTP 授权码" onChange={set('smtp_password')} />
+            </div>
+            <div className="form-item">
+              <label>发件人名称</label>
+              <input value={settings.smtp_from_name || ''} placeholder="智体工坊" onChange={set('smtp_from_name')} />
+            </div>
+            <div className="form-item">
+              <label>加密方式</label>
+              <select value={settings.smtp_use_ssl || 'true'} onChange={set('smtp_use_ssl')}>
+                <option value="true">SSL (465)</option>
+                <option value="false">STARTTLS (587)</option>
+              </select>
+            </div>
+          </div>
+          <button className="save-btn" onClick={saveSettings}>保存 SMTP 配置</button>
+
+          <hr className="settings-hr" />
+          <h4>🗃 LLDAP 统一认证（可选）</h4>
+          <p className="muted">
+            开启后，本地用户正常登录；本地没有的用户自动走 LLDAP 验证，验证通过自动建账。需服务器安装 python3-ldap3（pip install ldap3）。
+            <br />例：URL ldap://ldap.example.com:3890，Bind DN uid=admin,ou=people,dc=example,dc=com，Base DN ou=people,dc=example,dc=com
+          </p>
+          <div className="settings-grid">
+            <div className="form-item full">
+              <label>开启 LLDAP</label>
+              <select value={settings.lldap_enabled || 'false'} onChange={set('lldap_enabled')}>
+                <option value="false">关闭（默认）</option>
+                <option value="true">开启</option>
+              </select>
+            </div>
+            <div className="form-item">
+              <label>LLDAP 地址</label>
+              <input value={settings.lldap_url || ''} placeholder="ldap://ldap.example.com:3890" onChange={set('lldap_url')} />
+            </div>
+            <div className="form-item">
+              <label>Bind DN</label>
+              <input value={settings.lldap_bind_dn || ''} placeholder="uid=admin,ou=people,dc=example,dc=com" onChange={set('lldap_bind_dn')} />
+            </div>
+            <div className="form-item">
+              <label>Bind 密码</label>
+              <input type="password" value={settings.lldap_bind_password || ''} onChange={set('lldap_bind_password')} />
+            </div>
+            <div className="form-item">
+              <label>Base DN</label>
+              <input value={settings.lldap_base_dn || ''} placeholder="ou=people,dc=example,dc=com" onChange={set('lldap_base_dn')} />
+            </div>
+            <div className="form-item">
+              <label>管理员组名</label>
+              <input value={settings.lldap_admin_group || 'admins'} onChange={set('lldap_admin_group')} />
+            </div>
+          </div>
+          <button className="save-btn" onClick={saveSettings}>保存 LLDAP 配置</button>
+
+          <hr className="settings-hr" />
           <h4>🔑 修改密码</h4>
           <div className="settings-grid">
             <div className="form-item"><label>原密码</label><input type="password" value={pwdForm.old} onChange={(e) => setPwdForm({ ...pwdForm, old: e.target.value })} /></div>

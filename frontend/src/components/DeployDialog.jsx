@@ -67,7 +67,7 @@ export default function DeployDialog({ agent, onClose }) {
               className="field-input"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="在 api.myagentlab.homes 购买"
+              placeholder="在模型 API 网关购买（如 https://api.example.com）"
             />
 
             <label className="field-label">租用时长（最长 {maxDays} 天）</label>

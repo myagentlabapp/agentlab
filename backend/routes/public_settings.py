@@ -1,7 +1,7 @@
 """Public settings: 前端品牌读取（无需登录）"""
 
 from fastapi import APIRouter
-from settings_store import get_all_settings, get_setting
+from settings_store import get_all_settings
 from models import Agent
 from database import get_db
 
@@ -29,4 +29,11 @@ def public_settings():
         "max_duration_days": int(s.get("max_duration_days", "30")),
         "default_duration_days": int(s.get("default_duration_days", "7")),
         "free_mode": s.get("free_mode", "true") == "true",
+        # ---- Turnstile（公开字段，仅 site_key + 开关，不发 secret） ----
+        "turnstile_enabled": s.get("turnstile_enabled", "false") == "true",
+        "turnstile_site_key": s.get("turnstile_site_key", ""),
+        "email_register_enabled": s.get("email_register_enabled", "false") == "true",
+        "lldap_enabled": s.get("lldap_enabled", "false") == "true",
+        "platform_domain": s.get("platform_domain", "").strip(),
+        "platform_url": s.get("platform_url", "").strip(),
     }

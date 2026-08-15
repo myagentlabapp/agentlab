@@ -47,17 +47,38 @@ async function request(path, options = {}) {
 }
 
 // Auth
-export function register(username, password) {
+export function register(username, password, turnstileToken, email, code) {
   return request('/api/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password, turnstile_token: turnstileToken || '', email: email || '', code: code || '' })
   })
 }
 
-export function login(username, password) {
+export function sendCode(email) {
+  return request('/api/auth/send-code', {
+    method: 'POST',
+    body: JSON.stringify({ email })
+  })
+}
+
+export function forgotPassword(username, turnstileToken) {
+  return request('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify({ username, turnstile_token: turnstileToken || '' })
+  })
+}
+
+export function resetPassword(username, email, code, newPassword) {
+  return request('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ username, email, code, new_password: newPassword })
+  })
+}
+
+export function login(username, password, turnstileToken) {
   return request('/api/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password, turnstile_token: turnstileToken || '' })
   })
 }
 

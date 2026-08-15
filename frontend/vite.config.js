@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
-    allowedHosts: ['.myagentlab.homes', 'localhost', '127.0.0.1'],
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS ? process.env.VITE_ALLOWED_HOSTS.split(',') : ['localhost'],
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from database import get_db
 from models import Setting
+from app_secrets import get_env
 
 DEFAULTS = {
     "brand_name": "智体工坊",
@@ -23,10 +24,10 @@ DEFAULTS = {
     "max_duration_days": "30",
     "default_duration_days": "7",
     "free_mode": "true",
-    "footer_links": json.dumps([
-        {"label": "帮助文档", "url": "https://wiki.myagentlab.homes"},
-        {"label": "API 网关", "url": "https://api.myagentlab.homes"},
-    ], ensure_ascii=False),
+    "footer_links": json.dumps([], ensure_ascii=False),
+    # ---- 平台域名（部署期从 .env 读，运行期可在后台改） ----
+    "platform_domain": get_env("PLATFORM_DOMAIN", ""),        # 域名主体，如 myagentlab.homes
+    "platform_url": get_env("PLATFORM_URL", ""),              # 平台前端完整地址，如 https://agent.myagentlab.homes
     # ---- 扩展品牌 ----
     "brand_icp": "",                    # ICP 备案号
     "brand_stat_script": "",            # 统计代码（umami/GA）
@@ -41,6 +42,29 @@ DEFAULTS = {
     "currency_symbol": "¥",             # 币种符号
     "billing_mode": "monthly",          # monthly|hourly|usage
     "discount_new_user": "100",         # 新用户折扣 %（100=无折扣）
+    # ---- Cloudflare Turnstile ----
+    "turnstile_enabled": "false",
+    "turnstile_site_key": "",
+    "turnstile_secret_key": "",
+    # ---- login rate limit ----
+    "login_rate_limit": "10",
+    "login_lockout_threshold": "5",
+    "login_lockout_minutes": "15",
+    # ---- SMTP ----
+    "email_register_enabled": "false",
+    "smtp_host": "",
+    "smtp_port": "465",
+    "smtp_username": "",
+    "smtp_password": "",
+    "smtp_from_name": "",
+    "smtp_use_ssl": "true",
+    # ---- LLDAP ----
+    "lldap_enabled": "false",
+    "lldap_url": "",
+    "lldap_bind_dn": "",
+    "lldap_bind_password": "",
+    "lldap_base_dn": "",
+    "lldap_admin_group": "admins",
 }
 
 

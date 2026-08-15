@@ -41,6 +41,13 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
     cport = AGENT_CONTAINER_PORT.get(agent_id, "8080")
     access_password = generate_access_password()
 
+    # 每租户独立 bridge 网络(隔离租户间与宿主其它容器的横向访问)
+    network_name = f"tenant-net-{lease_id[:8]}"
+    try:
+        network = client.networks.get(network_name)
+    except docker.errors.NotFound:
+        network = client.networks.create(network_name, driver="bridge")
+
     environment = {
         "OPENAI_API_KEY": api_key,
         "OPENAI_BASE_URL": OPENAI_BASE_URL,
@@ -62,6 +69,13 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         labels=labels,
         detach=True,
         restart_policy={"Name": "unless-stopped"},
+        # ---- 安全加固 2026-08-15 ----
+        # 最小权限:去掉全部 Linux capabilities + 禁止提权 + 限进程数防 fork bomb
+        cap_drop=["ALL"],
+        security_opt=["no-new-privileges"],
+        pids_limit=512,
+        # 每租户独立 bridge 网络:租户间互不可达,与宿主其它容器隔离
+        network=network_name,
     )
     return container, access_password
 
@@ -90,6 +104,12 @@ def stop_container(lease_id):
             stopped = True
         except Exception:
             pass
+    # 回收租户网络
+    try:
+        network = client.networks.get(f"tenant-net-{lease_id[:8]}")
+        network.remove()
+    except Exception:
+        pass
     return stopped
 
 

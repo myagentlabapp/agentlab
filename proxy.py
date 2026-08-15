@@ -1,19 +1,16 @@
-"""Agent 实例动态反向代理：Host 子域名 -> 查库拿端口 -> JWT 校验 -> 转发到本地容器端口
-支持两种域名格式：
-  {lease_prefix}.{platform_domain}            (一级子域，证书免费覆盖)
-  {lease_prefix}.agent.{platform_domain}      (兼容旧格式)
+"""proxy.py v5: 平台认证只认 cookie(Authorization 透传给租户容器)
 
-platform_domain 从 DB settings 表读取（后台可配置），未配置时回退 .env PLATFORM_DOMAIN。
+v5 变更(2026-08-15):
+- check_auth_headers / _token_from: 平台 JWT 只从 cookie 读取。
+  Authorization 头不再被平台校验拦截, 原样透传给租户容器 —
+  因为 hermes/lobechat 等租户前端用自己的 Bearer token 调自己的 API,
+  若 proxy 把 Authorization 当平台 JWT 校验会误杀 (403 登录无效或已过期)。
+- WebSocket 认证同步改为只认 cookie。
 
-v3 安全：JWT 认证 + 归属校验
-  - 请求必须带平台登录 token（Cookie myagentlab_token 或 Authorization Bearer）
-  - token 无效/过期 -> 302 重定向到平台登录页（带 redirect 回跳）
-  - token 有效但子域名不属于当前用户 -> 403
-  - 管理员 token 可访问任意子域名（调试/运维）
-
-v2 修复：httpx 转发时自动解压了响应 body，但保留的 content-encoding 头
-会让浏览器按原编码解码失败（ERR_CONTENT_DECODING_FAILED）。
-转发时移除 content-encoding / content-length 头，让下游（CF/浏览器）重新压缩。
+v4 变更:
+- 新增 @app.websocket 路由: 客户端 Upgrade 请求 -> JWT 校验(与 HTTP 相同) ->
+  websockets.connect 连上游容器 -> 双向消息转发
+- HTTP 转发逻辑与 v3 完全一致(不变)
 """
 import os
 import sqlite3
@@ -22,7 +19,7 @@ from urllib.parse import quote
 
 import httpx
 import jwt
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response, JSONResponse, RedirectResponse
 
 _ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +42,6 @@ def _load_env():
 
 
 def _load_platform_conf():
-    """从 DB settings 读 platform_domain / platform_url，回退 .env"""
     env = _load_env()
     domain = env.get("PLATFORM_DOMAIN", "")
     url = env.get("PLATFORM_URL", "")
@@ -65,7 +61,6 @@ LOGIN_URL = (PLATFORM_URL or f"https://agent.{PLATFORM_DOMAIN}" if PLATFORM_DOMA
 
 
 def _load_jwt_secret():
-    """从 backend/.env 读 JWT_SECRET（与 app_secrets 同款逻辑，proxy 独立进程）"""
     env = _load_env()
     return env.get("JWT_SECRET", "") or None
 
@@ -75,23 +70,14 @@ JWT_SECRET = _load_jwt_secret()
 app = FastAPI(title="agent-proxy")
 client = httpx.AsyncClient(timeout=120.0)
 
-# 转发时必须剔除的响应头（httpx 已解码 body，头不匹配会解码失败）
 DROP_RESPONSE_HEADERS = {
-    "content-length",
-    "transfer-encoding",
-    "connection",
-    "content-encoding",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailers",
-    "upgrade",
+    "content-length", "transfer-encoding", "connection", "content-encoding",
+    "keep-alive", "proxy-authenticate", "proxy-authorization", "te",
+    "trailers", "upgrade",
 }
 
 
 def find_lease(prefix: str):
-    """按 lease_id 前缀查 lease，返回 {id, port, user_id, status}"""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -109,7 +95,6 @@ def find_lease(prefix: str):
 
 
 def extract_prefix(host: str) -> str | None:
-    """从 Host 头提取 lease 前缀"""
     if not PLATFORM_DOMAIN:
         return None
     host = host.split(":")[0]
@@ -126,16 +111,22 @@ def extract_prefix(host: str) -> str | None:
     return None
 
 
-def get_token(request: Request) -> str | None:
-    """从 Cookie 或 Authorization 头取 token"""
-    auth = request.headers.get("authorization", "")
-    if auth.startswith("Bearer "):
-        return auth[7:]
-    return request.cookies.get(COOKIE_NAME)
+def _token_from(headers) -> str | None:
+    """平台 JWT 只从 cookie 读取(v5)。
+
+    租户容器(hermes/lobechat)自己的前端用 Authorization: Bearer <自己的token>
+    调自己的 API; 若这里把 Authorization 当平台 JWT, 会 decode 失败误杀请求。
+    Authorization 头原样透传, 不参与平台认证。
+    """
+    cookie = headers.get("cookie", "")
+    for part in cookie.split(";"):
+        part = part.strip()
+        if part.startswith(COOKIE_NAME + "="):
+            return part[len(COOKIE_NAME) + 1:]
+    return None
 
 
 def decode_token(token: str):
-    """校验 JWT，返回 payload 或 None"""
     if not JWT_SECRET:
         return None
     try:
@@ -144,26 +135,111 @@ def decode_token(token: str):
         return None
 
 
-def check_auth(request: Request, lease: dict) -> str | None:
-    """认证 + 归属校验。返回 None=通过，否则返回错误描述。"""
-    token = get_token(request)
+def check_auth_headers(headers) -> str | None:
+    """基于请求头做认证+归属校验(HTTP 与 WebSocket 共用)。返回 None=通过。"""
+    token = _token_from(headers)
     if not token:
         return "未登录"
     payload = decode_token(token)
     if not payload:
         return "登录无效或已过期"
     if payload.get("admin"):
-        return None  # 管理员可访问任意实例
-    if lease and payload.get("sub") != lease.get("user_id"):
-        return "无权访问该实例"
+        return None
+    host = headers.get("host", "")
+    prefix = extract_prefix(host)
+    if prefix:
+        lease = find_lease(prefix)
+        if lease and payload.get("sub") != lease.get("user_id"):
+            return "无权访问该实例"
     return None
-
-
 
 
 @app.get("/__proxy_health")
 async def health():
     return {"status": "ok", "jwt_secret_loaded": bool(JWT_SECRET), "platform_domain": PLATFORM_DOMAIN}
+
+
+@app.websocket("/{path:path}")
+async def proxy_ws(websocket: WebSocket, path: str):
+    """WebSocket 双向转发: 浏览器 <-> proxy <-> 容器 (openclaw Gateway / hermes chat)"""
+    host = websocket.headers.get("host", "")
+    prefix = extract_prefix(host)
+    if prefix is None:
+        await websocket.close(code=4404)
+        return
+    lease = find_lease(prefix)
+    if lease is None:
+        await websocket.close(code=4404)
+        return
+
+    auth_err = check_auth_headers(websocket.headers)
+    if auth_err:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+    port = lease["port"]
+    upstream_url = f"ws://127.0.0.1:{port}/" + path
+    if websocket.query_params:
+        qs = "&".join(f"{k}={v}" for k, v in websocket.query_params.items())
+        upstream_url += "?" + qs
+
+    import asyncio
+    import websockets as ws_lib
+
+    # 转发客户端 Origin 头(openclaw 按 gateway.controlUi.allowedOrigins 校验来源)
+    upstream_headers = {}
+    origin = websocket.headers.get("origin", "")
+    if origin:
+        upstream_headers["Origin"] = origin
+
+    try:
+        upstream = await ws_lib.connect(upstream_url, open_timeout=15, additional_headers=upstream_headers)
+    except Exception:
+        await websocket.close(code=4402)
+        return
+
+    async def client_to_upstream():
+        try:
+            while True:
+                msg = await websocket.receive()
+                t = msg.get("type")
+                if t == "websocket.receive":
+                    if msg.get("bytes") is not None:
+                        await upstream.send(msg["bytes"])
+                    elif msg.get("text") is not None:
+                        await upstream.send(msg["text"])
+                elif t == "websocket.disconnect":
+                    break
+        except Exception:
+            pass
+        finally:
+            try:
+                await upstream.close()
+            except Exception:
+                pass
+
+    async def upstream_to_client():
+        try:
+            async for m in upstream:
+                if isinstance(m, str):
+                    await websocket.send_text(m)
+                else:
+                    await websocket.send_bytes(m)
+        except Exception:
+            pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    t1 = asyncio.create_task(client_to_upstream())
+    t2 = asyncio.create_task(upstream_to_client())
+    done, pending = await asyncio.wait({t1, t2}, return_when=asyncio.FIRST_COMPLETED)
+    for t in pending:
+        t.cancel()
+
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy(path: str, request: Request):
@@ -176,10 +252,8 @@ async def proxy(path: str, request: Request):
     if lease is None:
         return JSONResponse({"detail": f"lease '{prefix}' not found or not running"}, status_code=404)
 
-    # ---- v3 安全：认证 + 归属 ----
-    auth_err = check_auth(request, lease)
+    auth_err = check_auth_headers(request.headers)
     if auth_err == "未登录":
-        # 浏览器请求 -> 302 跳登录页；API 请求 -> 401 JSON
         target = f"https://{host}/" + path
         if request.url.query:
             target += "?" + request.url.query
@@ -215,8 +289,6 @@ async def proxy(path: str, request: Request):
         return JSONResponse({"detail": "upstream error"}, status_code=502)
 
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=80)

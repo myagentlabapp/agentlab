@@ -1,8 +1,19 @@
-"""Docker container lifecycle management for agent leases.
+"""docker_manager.py 增强:openclaw 真镜像配置挂载 + lobechat AUTH_SECRET + hermes config 生成
 
-v2：部署时注入随机访问密码（ACCESS_CODE / AUTH_PASSWORD），作为第二道认证防线。
+改动点:
+1. AGENT_CONTAINER_PORT: openclaw 8080 -> 18789 (真 OpenClaw Gateway 端口)
+2. deploy_container 按 agent 分支:
+   - openclaw: 生成 openclaw.json (api_key 用部署请求参数, base_url 用 config.OPENAI_BASE_URL,
+     模型用 config 可配, 默认 deepseek-v4-flash), 挂载到 /home/node/.openclaw/openclaw.json;
+     env 注入 OPENCLAW_GATEWAY_TOKEN=access_password (租户访问 token)
+   - lobechat: env 注入 AUTH_SECRET=secrets.token_hex(32) (Auth.js 必需) +
+     DEFAULT_AGENT_CONFIG/OPENAI_MODEL_LIST (默认模型指向网关可用模型)
+   - hermes: env 已注入 OPENAI_*, 由镜像入口 wrapper 生成 config.yaml (见镜像层)
+3. 配置文件落盘目录: /mnt/storage/agent-tenant-platform/tenant-cfg/<lease8>/
 """
 
+import json
+import os
 import secrets
 
 import docker
@@ -12,18 +23,62 @@ from config import OPENAI_BASE_URL
 
 client = docker.from_env()
 
-# 各 agent 容器内监听端口（lobechat 官方镜像 3210，其余自研镜像 8080）
+# 各 agent 容器内监听端口 (真镜像端口)
 AGENT_CONTAINER_PORT = {
-    "openclaw": "8080",
-    "hermes": "8648",
-    "lobechat": "3210",
+    "openclaw": "18789",   # OpenClaw Gateway (Control UI / WS Gateway)
+    "hermes": "8648",      # Hermes Studio Web UI
+    "lobechat": "3210",    # LobeChat (Next.js)
 }
+
+# openclaw 默认模型 (平台网关可用的模型名, 后台可配覆盖)
+DEFAULT_OPENCLAW_MODEL = "deepseek-v4-flash"
+
+# openclaw 配置模板目录 (宿主机)
+TENANT_CFG_DIR = "/mnt/storage/agent-tenant-platform/tenant-cfg"
 
 
 def generate_access_password(length=12) -> str:
     """生成随机访问密码（字母+数字，无易混淆字符）"""
     alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _build_openclaw_config(api_key: str, access_password: str, model: str = DEFAULT_OPENCLAW_MODEL) -> dict:
+    """生成真 OpenClaw gateway 配置 (openclaw.json)。
+    所有凭据来自部署请求参数/运行环境, 不硬编码。
+    """
+    return {
+        "gateway": {"mode": "local", "port": 18789},
+        "agents": {
+            "defaults": {
+                "workspace": "~/.openclaw/workspace",
+                "model": {"primary": f"openai/{model}"},
+            },
+            "list": [
+                {"id": "main", "identity": {"name": "Clawd", "theme": "helpful assistant", "emoji": "🦞"}}
+            ],
+        },
+        "models": {
+            "providers": {
+                "openai": {
+                    "baseUrl": OPENAI_BASE_URL.rstrip("/") + "/",
+                    "apiKey": api_key,
+                    "models": [{"id": model, "name": model}],
+                }
+            }
+        },
+    }
+
+
+def _write_openclaw_cfg(lease_id: str, api_key: str, access_password: str) -> str:
+    """把 openclaw.json 写到宿主目录, 返回挂载路径 (容器内路径)"""
+    os.makedirs(TENANT_CFG_DIR, exist_ok=True)
+    host_path = os.path.join(TENANT_CFG_DIR, lease_id[:8], "openclaw.json")
+    os.makedirs(os.path.dirname(host_path), exist_ok=True)
+    cfg = _build_openclaw_config(api_key, access_password)
+    with open(host_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    return "/home/node/.openclaw/openclaw.json"
 
 
 def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=2048, cpu_quota=200000):
@@ -59,24 +114,67 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         "AUTH_USERNAME": "admin",
     }
 
-    container = client.containers.run(
-        image,
+    volumes = {}
+    if agent_id == "openclaw":
+        # 真 OpenClaw Gateway: 挂载 openclaw.json + 注入 gateway token
+        cfg_container_path = _write_openclaw_cfg(lease_id, api_key, access_password)
+        volumes[os.path.join(TENANT_CFG_DIR, lease_id[:8], "openclaw.json")] = {
+            "bind": cfg_container_path,
+            "mode": "rw",
+        }
+        environment["OPENCLAW_GATEWAY_TOKEN"] = access_password
+    elif agent_id == "lobechat":
+        # LobeChat: Auth.js 必需 AUTH_SECRET + 默认模型指向网关可用模型
+        environment["AUTH_SECRET"] = secrets.token_hex(32)
+        environment["DEFAULT_AGENT_CONFIG"] = json.dumps(
+            {"model": DEFAULT_OPENCLAW_MODEL, "provider": "openai"}, ensure_ascii=False
+        )
+        environment["OPENAI_MODEL_LIST"] = f"-all,+{DEFAULT_OPENCLAW_MODEL}"
+
+    # ---- hermes 专用: 以镜像内 hermes 用户(uid=10000)运行, 绕过官方镜像的 root 守卫 ----
+    # 镜像默认 USER=root, 但 hermes gateway 在 /opt/hermes 检出环境里拒绝以 root 启动
+    # (见 hermes_cli/gateway.py _guard_official_docker_root_gateway), 否则 webui 的
+    # gateway-runner 会循环崩溃 (code=1) → chat 消息无人处理 → 前端 timeout。
+    # 解决: 容器整体以 hermes 用户启动 → 进程 geteuid()!=0, 守卫直接放行;
+    # 并在容器启动后用一次 root exec_run 把 /home/agent 属主 chown 给 hermes,
+    # 否则 hermes 用户无法读写 root 占有的 ~/.hermes → gateway/bridge 起不来。
+    hermes_user = "hermes" if agent_id == "hermes" else None
+
+    run_kwargs = dict(
         name=container_name,
         environment=environment,
         ports={f"{cport}/tcp": port},
+        volumes=volumes,
         mem_limit=f"{mem_limit_mb}m",
         cpu_quota=cpu_quota,
         labels=labels,
         detach=True,
         restart_policy={"Name": "unless-stopped"},
         # ---- 安全加固 2026-08-15 ----
-        # 最小权限:去掉全部 Linux capabilities + 禁止提权 + 限进程数防 fork bomb
         cap_drop=["ALL"],
         security_opt=["no-new-privileges"],
         pids_limit=512,
-        # 每租户独立 bridge 网络:租户间互不可达,与宿主其它容器隔离
         network=network_name,
     )
+    if hermes_user:
+        # hermes 容器以非特权用户运行
+        run_kwargs["user"] = hermes_user
+
+    container = client.containers.run(image, **run_kwargs)
+
+    # hermes: 容器已以 hermes 身份起来, 但初次部署时 /home/agent 可能还是 root 所有
+    # (hermes-web-ui 首次启动以 root 写入), 这里用一次 root exec 修正属主, 保证后续
+    # gateway/bridge 能读写 ~/.hermes。若容器已退出则跳过(下次 restart 会自愈)。
+    if hermes_user:
+        try:
+            container.exec_run(
+                user="root",
+                cmd="sh -c 'chown -R 10000:10000 /home/agent /opt/data 2>/dev/null; exit 0'",
+                stderr=False,
+            )
+        except Exception:
+            pass
+
     return container, access_password
 
 

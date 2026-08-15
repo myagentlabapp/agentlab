@@ -1,0 +1,9 @@
+services:
+  agent-frontend:
+    image: nginx:alpine
+    container_name: agent-frontend
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /mnt/storage/agent-tenant-platform/frontend/dist:/usr/share/nginx/html:ro
+      - ./default.conf:/etc/nginx/conf.d/default.conf:ro

@@ -149,9 +149,9 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
     elif agent_id == "lobechat":
         # LobeChat: Auth.js 必需 AUTH_SECRET + 默认模型指向网关可用模型
         environment["AUTH_SECRET"] = secrets.token_hex(32)
-        environment["DEFAULT_AGENT_CONFIG"] = json.dumps(
-            {"model": DEFAULT_OPENCLAW_MODEL, "provider": "openai"}, ensure_ascii=False
-        )
+        # LobeChat parseAgentConfig 只认 key=value;key=value 格式的正则解析,
+        # JSON 格式会导致 config 解析为空数组/空对象, 前端 fallback 到硬编码默认模型 (实测 gpt-5-mini 被网关拒)。
+        environment["DEFAULT_AGENT_CONFIG"] = f"model={DEFAULT_OPENCLAW_MODEL};provider=openai"
         # 覆盖镜像 Dockerfile 内置 DEFAULT_AGENT_MODEL=glm-4.7(网关不可用模型):
         # 该环境变量在部分镜像构建/旧版本中会被默认会话创建逻辑读取,
         # 显式覆盖为网关唯一可用模型, 防止新租户默认模型指向不存在的 glm-4.7。(F5)

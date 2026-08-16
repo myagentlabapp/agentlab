@@ -8,6 +8,36 @@ import BrandLogo from './components/BrandLogo.jsx'
 import RechargeDialog from './components/RechargeDialog.jsx'
 import { getMe, setToken, getPublicSettings } from './api/client.js'
 
+// ---------- 统一 SSO 登录（对接认证中心 sso.myagentlab.homes） ----------
+const SSO_LOGIN_URL = 'https://sso.myagentlab.homes/login'
+
+function redirectToSso() {
+  const back = window.location.href.replace(/([?&])sso=1(&|$)/, (m, lead, tail) => (tail === '&' ? lead : ''))
+  window.location.href = SSO_LOGIN_URL + '?redirect=' + encodeURIComponent(back)
+}
+
+function handleSsoCallback() {
+  const params = new URLSearchParams(window.location.search)
+  let sso = params.get('sso')
+  if (sso === '1') {
+    const withoutMark = window.location.pathname + window.location.search.replace(/([?&])sso=1(?=$|&)/, (m, lead) => (lead === '?' ? '' : lead))
+    const next = withoutMark + window.location.hash
+    history.replaceState(null, '', next)
+  }
+  if (!localStorage.getItem('myagentlab_token') && sso === '1') {
+    fetch('/api/auth/sso-callback', { credentials: 'include' })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res && res.token) {
+          setToken(res.token)
+          window.location.href = window.location.pathname
+        }
+      })
+      .catch(() => {})
+  }
+}
+handleSsoCallback()
+
 export default function App() {
   const [currentPage, setCurrentPage] = useState('home')
   const [leases, setLeases] = useState([])

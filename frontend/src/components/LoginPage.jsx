@@ -174,6 +174,23 @@ export default function LoginPage({ onLoggedIn }) {
         <h1 className="auth-title">{brand.brand_name}</h1>
         <p className="auth-sub">{brand.brand_tagline}{brand.brand_free_text ? ' · ' + brand.brand_free_text : ''}</p>
 
+        {/* 统一 SSO 登录：一句话拿到已建好的租户账号 */}
+        <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'center', padding: '14px 0 6px' }}>
+          {(() => {
+            const SSO_LOGIN_URL = 'https://sso.myagentlab.homes/login'
+            const redirectToSso = () => {
+              const back = window.location.href.replace(/([?&])sso=1(&|$)/, (m, lead, tail) => (tail === '&' ? lead : ''))
+              window.location.href = SSO_LOGIN_URL + '?redirect=' + encodeURIComponent(back)
+            }
+            return (
+              <button type="button" className="btn btn-primary btn-lg" id="sso-login-btn" style={{ background: '#1e3a8a' }} onClick={redirectToSso}>
+                使用统一账号登录
+              </button>
+            )
+          })()}
+          <div style={{ fontSize: 13, color: '#9ca3af', padding: '10px 0' }}>—— 或 ——</div>
+        </div>
+
         {mode !== 'forgot' && (
           <div className="auth-mode">
             <button className={mode === 'login' ? 'active' : ''} onClick={() => switchMode('login')}>登录</button>

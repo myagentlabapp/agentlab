@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -13,6 +14,7 @@ from datetime import datetime
 import jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette import status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -29,6 +31,11 @@ ALGO = "HS256"
 # 平台登录 cookie：Domain 动态取 settings.platform_domain（所有租户子域名共享）
 COOKIE_NAME = "myagentlab_token"
 COOKIE_DOMAIN = None
+
+# ---------- SSO 认证中心（统一登录） ----------
+# 服务端调 SSO 中心鉴权（可被 .env / 环境变量覆盖）
+SSO_VERIFY_URL = os.environ.get("SSO_VERIFY_URL", "http://localhost:8310/api/verify")
+SSO_VERIFY_TIMEOUT = 5
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
@@ -403,6 +410,54 @@ def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
         )
     remain = threshold - _login_lockout._fails.get(req.username, (0, 0, 0))[0] if req.username in _login_lockout._fails else 0
     raise HTTPException(status_code=401, detail="用户名或密码错误" + (f"（再错 {remain} 次锁定）" if remain > 0 else ""))
+
+
+@router.get("/sso-callback")
+def sso_callback(request: Request, db: Session = Depends(get_db)):
+    """统一 SSO 登录回调：读浏览器 sso_token cookie → 服务端调 SSO 中心 /api/verify → 建/取本地用户 → 签发平台 token"""
+    import requests as _requests
+
+    # cookie 优先，取不到时兼容 query param（SSO 跳回时 cookie 一定在，curl/测试方便）
+    token = (request.cookies.get("sso_token", "") or request.query_params.get("sso_token", "")).strip()
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="SSO 登录态无效或已过期")
+    try:
+        d = _requests.get(SSO_VERIFY_URL, params={"sso_token": token}, timeout=SSO_VERIFY_TIMEOUT).json()
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="SSO 登录态无效或已过期")
+    if not (d.get("valid") and d.get("uid")):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="SSO 登录态无效或已过期")
+
+    uid = str(d["uid"])
+    # 以 SSO uid 作为本地用户名；已存在则复用（SSO 账号在本地是置空密码的 SSO 影子账号，不会锁死本地登录）
+    user = db.query(User).filter(User.username == uid).first()
+    if not user:
+        user = User(
+            id=str(uuid.uuid4()),
+            username=uid,
+            password_hash="",  # SSO 账号无本地密码
+            is_admin=0,
+            email=d.get("email", "") or "",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    token = create_token(user)
+    resp = JSONResponse({"ok": True, "token": token, "name": uid, "username": uid})
+    # 复用 _auth_response 的 cookie 逻辑（HttpOnly，租户子域名共享）
+    import settings_store as _ss
+    _pd = (_ss.get_setting("platform_domain", "") or "").strip()
+    resp.set_cookie(
+        COOKIE_NAME,
+        token,
+        max_age=7 * 24 * 3600,
+        httponly=True,
+        domain=("." + _pd) if _pd else None,
+        path="/",
+        samesite="lax",
+        secure=True,
+    )
+    return resp
 
 
 @router.get("/me")

@@ -5,7 +5,7 @@ v6 变更(2026-08-15, F1b):
   原因: hermes 容器 socket.io 的 allowRequest 用 Jv(Origin, req.headers.host, corsOrigins)
   做同源校验 —— 当 CORS_ORIGINS 未配置(默认 "")时, 退化为"Origin 的 host 必须等于
   请求 Host 头的 host"。proxy 转发到 ws://127.0.0.1:port 时 websockets 库默认发
-  Host: 127.0.0.1:port, 而浏览器 Origin=https://<租户>.myagentlab.homes, host 不等
+  Host: 127.0.0.1:port, 而浏览器 Origin=https://<租户域名>, host 不等
   -> 上游 socket.io 返回 400 "origin not allowed", WS 握手失败, 前端 socket.io 一直
   timeout。把上游 Host 改成租户域名后 Origin 与 Host 同源, 校验通过 -> 101 握手成功。
 

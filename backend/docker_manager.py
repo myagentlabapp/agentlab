@@ -82,7 +82,7 @@ def _write_openclaw_cfg(lease_id: str, api_key: str, access_password: str) -> st
     return "/home/node/.openclaw/openclaw.json"
 
 
-def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=2048, cpu_quota=200000):
+def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=2048, cpu_quota=200000, access_password=None):
     """Run a container for the given agent lease.
 
     Returns (container, access_password).
@@ -95,7 +95,8 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         "user_id": user_id,
     }
     cport = AGENT_CONTAINER_PORT.get(agent_id, "8080")
-    access_password = generate_access_password()
+    if access_password is None:
+        access_password = generate_access_password()
 
     # ---- hermes 专用: 用预 chown 修复镜像, 绕过官方镜像的 root 守卫 ----
     # 官方 myagentlab/hermes:latest 是 root-owned 文件系统, hermes gateway 在

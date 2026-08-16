@@ -24,3 +24,10 @@ frontend/dist/
 
 # OS
 .DS_Store
+
+# 租户配置与运行时产物（可能含真实凭据，永不提交）
+tenant-cfg/
+*.bak.*
+data.db.bak*
+*.log
+chat/

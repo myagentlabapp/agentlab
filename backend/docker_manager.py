@@ -20,6 +20,7 @@ import docker
 from docker.errors import NotFound
 
 from config import OPENAI_BASE_URL
+from settings_store import get_setting
 
 client = docker.from_env()
 
@@ -135,7 +136,10 @@ def deploy_container(agent_id, user_id, api_key, port, lease_id, mem_limit_mb=20
         # "origin not allowed" -> WS 握手失败 -> 前端 socket.io 首选 WS 失败且不 fallback
         # -> chat timeout。设置 allowlist 后 allowRequest 优先走 allowlist, 不再做同源校验。
         # (2026-08-15 F1c 根因)
-        environment["CORS_ORIGINS"] = f"https://{lease_id[:8]}.myagentlab.homes"
+        _pd = (get_setting("platform_domain", "") or "").strip()
+        if not _pd:
+            _pd = "myagentlab.homes"  # 回退默认(生产由 .env PLATFORM_DOMAIN 注入)
+        environment["CORS_ORIGINS"] = f"https://{lease_id[:8]}.{_pd}"
 
     volumes = {}
     if agent_id == "openclaw":

@@ -17,7 +17,7 @@ function loadTurnstileScript() {
   return turnstileScriptPromise;
 }
 
-export default function LoginPage({ onLoggedIn }) {
+export default function LoginPage({ onLoggedIn, onClose, hint }) {
   const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -167,10 +167,10 @@ export default function LoginPage({ onLoggedIn }) {
     setLoading(false);
   };
 
-  return (
-    <div className="auth-page">
-      <div className="auth-box">
-        <div className="auth-logo"><BrandLogo logo={brand.brand_logo} name={brand.brand_name} size="large" /></div>
+  // 表单与 SSO 内容（整页版与弹窗版共用，仅外层容器不同）
+  const authContent = (
+    <>
+      <div className="auth-logo"><BrandLogo logo={brand.brand_logo} name={brand.brand_name} size="large" /></div>
         <h1 className="auth-title">{brand.brand_name}</h1>
         <p className="auth-sub">{brand.brand_tagline}{brand.brand_free_text ? ' · ' + brand.brand_free_text : ''}</p>
 
@@ -263,6 +263,32 @@ export default function LoginPage({ onLoggedIn }) {
             )}
           </form>
         )}
+    </>
+  );
+
+  // 传了 onClose → 弹窗模式（overlay 点击关闭，modal 内不冒泡）
+  if (onClose) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal modal-login" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-login-head">
+            <span className="modal-login-title">登录</span>
+            <button type="button" className="modal-login-close" onClick={onClose} aria-label="关闭">✕</button>
+          </div>
+          <div className="auth-box auth-box-modal">
+            {hint && <p className="modal-login-hint">{hint}</p>}
+            {authContent}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 未传 onClose → 保持原整页行为
+  return (
+    <div className="auth-page">
+      <div className="auth-box">
+        {authContent}
       </div>
     </div>
   );

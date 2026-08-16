@@ -45,6 +45,8 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '' })
   const [showRecharge, setShowRecharge] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
+  const [loginHint, setLoginHint] = useState('')
 
   useEffect(() => {
     getPublicSettings().then(setBrand).catch(() => {})
@@ -57,7 +59,7 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const handler = () => setUser(null)
+    const handler = () => { setUser(null); setCurrentPage('home') }
     window.addEventListener('auth-changed', handler)
     return () => window.removeEventListener('auth-changed', handler)
   }, [])
@@ -67,44 +69,71 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
-  if (!authChecked) {
-    return <div className="status-text">加载中…</div>
+  // 未登录时：只展示产品落地页（主页），点非主页操作一律改为唤起登录弹窗
+  const handleNavigate = (page) => {
+    if (!user && page !== 'home') {
+      setLoginHint(
+        page === 'leases' ? '请先登录，登录后可管理你的实例'
+        : page === 'admin' ? '请先登录，管理员可进入管理后台'
+        : '请先登录，登录后可浏览应用市场并部署 AI Agent'
+      )
+      setShowLogin(true)
+      return
+    }
+    navigate(page)
   }
 
-  if (!user) {
-    return <LoginPage onLoggedIn={(res) => setUser({ username: res.username, is_admin: res.is_admin, balance: res.balance || 0 })} />
+  const openLogin = () => { setLoginHint(''); setShowLogin(true) }
+
+  if (!authChecked) {
+    return <div className="status-text">加载中…</div>
   }
 
   return (
     <div>
       <nav>
-        <div className="nav-brand" onClick={() => navigate('home')} style={{ cursor: 'pointer' }}>
+        <div className="nav-brand" onClick={() => handleNavigate('home')} style={{ cursor: 'pointer' }}>
           <BrandLogo logo={brand.brand_logo} name={brand.brand_name} /> <span className="nav-brand-text">{brand.brand_name}</span>
         </div>
         <div className="nav-links">
-          <button style={currentPage === 'home' ? { fontWeight: 'bold' } : {}} onClick={() => navigate('home')}>主页</button>
-          <button style={currentPage === 'market' ? { fontWeight: 'bold' } : {}} onClick={() => navigate('market')}>应用市场</button>
-          <button style={currentPage === 'leases' ? { fontWeight: 'bold' } : {}} onClick={() => navigate('leases')}>我的实例</button>
-          {user.is_admin && (
+          {user ? (
             <>
-              <button style={currentPage === 'admin' ? { fontWeight: 'bold' } : {}} onClick={() => navigate('admin')}>⚙️ 管理后台</button>
+              <button style={currentPage === 'home' ? { fontWeight: 'bold' } : {}} onClick={() => handleNavigate('home')}>主页</button>
+              <button style={currentPage === 'market' ? { fontWeight: 'bold' } : {}} onClick={() => handleNavigate('market')}>应用市场</button>
+              <button style={currentPage === 'leases' ? { fontWeight: 'bold' } : {}} onClick={() => handleNavigate('leases')}>我的实例</button>
+              {user.is_admin && (
+                <button style={currentPage === 'admin' ? { fontWeight: 'bold' } : {}} onClick={() => handleNavigate('admin')}>⚙️ 管理后台</button>
+              )}
+              <span className="nav-user">
+                💰 ¥{user.balance ?? 0}
+                <button className="toggle-btn" onClick={() => setShowRecharge(true)}>充值</button>
+                👤 {user.username}
+                <button className="logout-btn" onClick={() => { setToken(null); setUser(null); setCurrentPage('home'); }}>退出</button>
+              </span>
             </>
+          ) : (
+            <button className="nav-login-btn" onClick={openLogin}>登录</button>
           )}
-          <span className="nav-user">
-            💰 ¥{user.balance ?? 0}
-            <button className="toggle-btn" onClick={() => setShowRecharge(true)}>充值</button>
-            👤 {user.username}
-            <button className="logout-btn" onClick={() => { setToken(null); setUser(null); }}>退出</button>
-          </span>
         </div>
       </nav>
 
       <main>
-        {currentPage === 'home' && <HomePage onNavigate={navigate} />}
-        {currentPage === 'market' && <AgentList onDeploy={() => {}} onGoRecharge={() => setShowRecharge(true)} />}
-        {currentPage === 'leases' && <LeaseList leases={leases} setLeases={setLeases} />}
-        {currentPage === 'admin' && user.is_admin && <AdminPanel onBrandSaved={() => getPublicSettings().then(setBrand)} />}
+        {currentPage === 'home' && <HomePage onNavigate={handleNavigate} />}
+        {user && currentPage === 'market' && <AgentList onDeploy={() => {}} onGoRecharge={() => setShowRecharge(true)} />}
+        {user && currentPage === 'leases' && <LeaseList leases={leases} setLeases={setLeases} />}
+        {user && currentPage === 'admin' && user.is_admin && <AdminPanel onBrandSaved={() => getPublicSettings().then(setBrand)} />}
       </main>
+
+      {showLogin && !user && (
+        <LoginPage
+          onLoggedIn={(res) => {
+            setUser({ username: res.username, is_admin: res.is_admin, balance: res.balance || 0 })
+            setShowLogin(false)
+          }}
+          onClose={() => setShowLogin(false)}
+          hint={loginHint}
+        />
+      )}
 
       {showRecharge && (
         <RechargeDialog

@@ -483,3 +483,43 @@ main {
 .nav-brand-text { margin-left: 6px; }
 
 .logo-preview { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+
+/* 未登录产品落地页 - 导航「登录」按钮 */
+.nav-login-btn {
+  background: #fbbf24;
+  color: #1e293b;
+  border: none;
+  padding: 6px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.nav-login-btn:hover {
+  background: #f59e0b;
+  opacity: 1;
+}
+
+/* 登录弹窗（LoginPage 弹窗模式，复用 .modal-overlay/.modal） */
+.modal-login { width: 400px; padding: 24px; }
+.modal-login-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.modal-login-title { font-size: 18px; font-weight: 700; color: #111827; }
+.modal .modal-login-close {
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal .modal-login-close:hover { background: #e5e7eb; }
+.modal-login-hint { font-size: 13px; color: #6b7280; margin-bottom: 4px; }
+.auth-box-modal { width: 100%; padding: 0; box-shadow: none; }
+.auth-box-modal .auth-submit { padding: 12px; font-size: 15px; font-weight: 600; }

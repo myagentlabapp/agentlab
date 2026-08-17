@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import LoginPage from './components/LoginPage.jsx'
 import HomePage from './components/HomePage.jsx'
 import AgentList from './components/AgentList.jsx'
 import LeaseList from './components/LeaseList.jsx'
@@ -45,8 +44,6 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [brand, setBrand] = useState({ brand_logo: '🧪', brand_name: '' })
   const [showRecharge, setShowRecharge] = useState(false)
-  const [showLogin, setShowLogin] = useState(false)
-  const [loginHint, setLoginHint] = useState('')
 
   useEffect(() => {
     getPublicSettings().then(setBrand).catch(() => {})
@@ -69,21 +66,16 @@ export default function App() {
     window.scrollTo({ top: 0 })
   }
 
-  // 未登录时：只展示产品落地页（主页），点非主页操作一律改为唤起登录弹窗
+  // 未登录时：只展示产品落地页（主页），点非主页操作一律改为直接跳转 SSO 登录中心
   const handleNavigate = (page) => {
     if (!user && page !== 'home') {
-      setLoginHint(
-        page === 'leases' ? '请先登录，登录后可管理你的实例'
-        : page === 'admin' ? '请先登录，管理员可进入管理后台'
-        : '请先登录，登录后可浏览应用市场并部署 AI Agent'
-      )
-      setShowLogin(true)
+      redirectToSso()
       return
     }
     navigate(page)
   }
 
-  const openLogin = () => { setLoginHint(''); setShowLogin(true) }
+  const openLogin = () => { redirectToSso() }
 
   if (!authChecked) {
     return <div className="status-text">加载中…</div>
@@ -123,17 +115,6 @@ export default function App() {
         {user && currentPage === 'leases' && <LeaseList leases={leases} setLeases={setLeases} />}
         {user && currentPage === 'admin' && user.is_admin && <AdminPanel onBrandSaved={() => getPublicSettings().then(setBrand)} />}
       </main>
-
-      {showLogin && !user && (
-        <LoginPage
-          onLoggedIn={(res) => {
-            setUser({ username: res.username, is_admin: res.is_admin, balance: res.balance || 0 })
-            setShowLogin(false)
-          }}
-          onClose={() => setShowLogin(false)}
-          hint={loginHint}
-        />
-      )}
 
       {showRecharge && (
         <RechargeDialog
